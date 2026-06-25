@@ -1,0 +1,14 @@
+{
+  "name": "reds-wavl-schedule",
+  "version": "1.0.0",
+  "description": "Mini webapp that extracts all Reds team matches from the WAVL schedule.",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0",
+    "express": "^4.19.2"
+  }
+}

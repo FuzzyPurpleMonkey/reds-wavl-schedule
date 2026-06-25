@@ -1,0 +1,183 @@
+import express from "express";
+import * as cheerio from "cheerio";
+
+const SOURCE_URL =
+  "https://volleyball.exposureevents.com/259835/wavl/documents/schedule?layout=datetime";
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// Simple in-memory cache so we don't hammer the source site on every page load.
+let cache = { at: 0, data: null };
+const CACHE_MS = 5 * 60 * 1000; // 5 minutes
+
+const clean = (s) => (s || "").replace(/\s+/g, " ").trim();
+const isReds = (name) => /\breds\b/i.test(name);
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+// Sort key for ordering teams by division: SL first, then D1, D2, ...
+// and within each division by gender/grade: M, W, RM, RW.
+function teamSortKey(name) {
+  const prefix = name.split(/\s+/)[0]; // e.g. "D1M", "SLRW"
+  let divRank = 999;
+  let rest = "";
+  const m = prefix.match(/^D(\d+)(.*)$/);
+  if (/^SL/.test(prefix)) {
+    divRank = 0; // State League comes before the numbered divisions
+    rest = prefix.slice(2);
+  } else if (m) {
+    divRank = parseInt(m[1], 10);
+    rest = m[2];
+  }
+  const reserve = /^R/.test(rest) ? 1 : 0; // "R" marks reserves
+  const women = /W$/.test(prefix) ? 1 : 0;
+  const gradeIdx = reserve * 2 + women; // M=0, W=1, RM=2, RW=3
+  return [divRank, gradeIdx];
+}
+
+// "Saturday, April 11, 2026" -> "Sat 11-Apr-2026". Falls back to the raw string.
+function formatDate(raw) {
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return raw;
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${DAYS[d.getDay()]} ${dd}-${MONTHS[d.getMonth()]}-${d.getFullYear()}`;
+}
+
+function parseSchedule(html) {
+  const $ = cheerio.load(html);
+
+  // Build a map of venue id -> full venue name from the legend at the bottom.
+  const venueNames = {};
+  $('[id^="venue-"]').each((_, el) => {
+    venueNames[$(el).attr("id")] = clean($(el).text());
+  });
+
+  const matches = [];
+
+  // Each date is its own <table class="division-schedule"> with the date in <h3>.
+  $("table.division-schedule").each((_, table) => {
+    const $table = $(table);
+    const date = formatDate(clean($table.find("thead h3").first().text()));
+
+    $table.find("tr.game").each((_, row) => {
+      const cells = $(row).children("td");
+      const time = clean($(cells[0]).text());
+
+      const venueAbbr = clean($(cells[1]).text());
+      const venueHref = $(cells[1]).find("a").attr("href") || "";
+      const venueId = venueHref.replace(/^#/, "");
+      // Legend names look like "Aquin - Aquinas College"; drop the abbreviation prefix.
+      const venueFull = (venueNames[venueId] || venueAbbr).replace(/^.*?\s-\s/, "");
+
+      const court = clean($(cells[2]).text());
+      const division = clean($(cells[3]).text());
+      const home = clean($(cells[4]).text());
+      const away = clean($(cells[5]).text());
+      const work = clean($(cells[6]).text());
+      const score = clean($(cells[7]).text());
+
+      // The source marks the winning team's cell with class="winner".
+      const homeWon = $(cells[4]).hasClass("winner");
+      const awayWon = $(cells[5]).hasClass("winner");
+
+      // Keep the game if a Reds team is involved as home, away, or work.
+      if (!isReds(home) && !isReds(away) && !isReds(work)) return;
+
+      // Reds result for this game: W/L if a Reds team played, N/A if Reds only
+      // had work duty, and "" if the game hasn't been played yet.
+      const redHome = isReds(home);
+      const redAway = isReds(away);
+      const played = score !== "" || homeWon || awayWon;
+      let result;
+      if (!played) result = "";
+      else if (redHome || redAway) {
+        if (redHome && redAway) result = "W"; // Reds vs Reds — a Reds team won
+        else if (redHome) result = homeWon ? "W" : "L";
+        else result = awayWon ? "W" : "L";
+      } else {
+        result = "N/A"; // Reds were only the work team
+      }
+
+      // Set tally from the Reds perspective, e.g. "3-1" (or "1-3" for a loss).
+      let setScore = "";
+      if (score && (redHome || redAway)) {
+        let homeSets = 0;
+        let awaySets = 0;
+        for (const set of score.split(",")) {
+          const sm = set.trim().match(/^(\d+)-(\d+)$/);
+          if (!sm) continue;
+          if (+sm[1] > +sm[2]) homeSets++;
+          else if (+sm[2] > +sm[1]) awaySets++;
+        }
+        // Use the away perspective only when Reds are the away side (not Reds-vs-Reds).
+        setScore = redAway && !redHome ? `${awaySets}-${homeSets}` : `${homeSets}-${awaySets}`;
+      }
+
+      matches.push({
+        date,
+        time,
+        venue: venueFull,
+        court,
+        division,
+        home,
+        away,
+        work,
+        score,
+        homeWon,
+        awayWon,
+        played,
+        result,
+        setScore,
+      });
+    });
+  });
+
+  return matches;
+}
+
+async function getMatches() {
+  if (cache.data && Date.now() - cache.at < CACHE_MS) {
+    return cache.data;
+  }
+  const res = await fetch(SOURCE_URL, {
+    headers: { "User-Agent": "Mozilla/5.0 (reds-wavl-schedule)" },
+  });
+  if (!res.ok) {
+    throw new Error(`Source returned HTTP ${res.status}`);
+  }
+  const html = await res.text();
+  const data = parseSchedule(html);
+  cache = { at: Date.now(), data };
+  return data;
+}
+
+app.get("/api/matches", async (req, res) => {
+  try {
+    const matches = await getMatches();
+
+    // Distinct Reds teams that appear as home, away, or work, for the filter buttons.
+    const teamSet = new Set();
+    for (const m of matches) {
+      if (isReds(m.home)) teamSet.add(m.home);
+      if (isReds(m.away)) teamSet.add(m.away);
+      if (isReds(m.work)) teamSet.add(m.work);
+    }
+    const teams = [...teamSet].sort((a, b) => {
+      const ka = teamSortKey(a);
+      const kb = teamSortKey(b);
+      return ka[0] - kb[0] || ka[1] - kb[1] || a.localeCompare(b);
+    });
+
+    res.json({ count: matches.length, source: SOURCE_URL, teams, matches });
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+app.use(express.static("public"));
+
+app.listen(PORT, () => {
+  console.log(`Reds WAVL schedule running at http://localhost:${PORT}`);
+});

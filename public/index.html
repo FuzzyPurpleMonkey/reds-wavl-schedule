@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Reds — WAVL Schedule</title>
+    <style>
+      :root {
+        --red: #c8102e;
+        --bg: #f6f7f9;
+        --line: #e3e6ea;
+        --muted: #6b7280;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        background: var(--bg);
+        color: #111;
+      }
+      header {
+        background: var(--red);
+        color: #fff;
+        padding: 20px 24px;
+      }
+      header h1 { margin: 0; font-size: 1.4rem; }
+      header p { margin: 4px 0 0; opacity: 0.85; font-size: 0.85rem; }
+      .wrap { max-width: 1200px; margin: 0 auto; padding: 20px 16px 60px; }
+      .controls {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        flex-wrap: wrap;
+        margin-bottom: 14px;
+      }
+      input[type="search"] {
+        flex: 1;
+        min-width: 220px;
+        padding: 10px 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        font-size: 0.95rem;
+      }
+      .count { color: var(--muted); font-size: 0.85rem; white-space: nowrap; }
+      button { font: inherit; }
+      .btn {
+        padding: 10px 14px;
+        border: 1px solid var(--line);
+        background: #fff;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 0.9rem;
+      }
+      .btn:hover { background: #f0f0f0; }
+      .btn.active { background: var(--red); border-color: var(--red); color: #fff; font-weight: 600; }
+      .filters {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-bottom: 18px;
+      }
+      .chip {
+        padding: 7px 12px;
+        border: 1px solid var(--line);
+        background: #fff;
+        border-radius: 999px;
+        cursor: pointer;
+        font-size: 0.82rem;
+        color: #333;
+        transition: background 0.1s, color 0.1s, border-color 0.1s;
+      }
+      .chip:hover { border-color: var(--red); }
+      .chip.active {
+        background: var(--red);
+        border-color: var(--red);
+        color: #fff;
+        font-weight: 600;
+      }
+      table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+      th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); font-size: 0.9rem; vertical-align: top; }
+      th { background: #fafbfc; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+      tr:last-child td { border-bottom: none; }
+      .reds { font-weight: 600; color: var(--red); }
+      .won { font-weight: 700; }
+      .score { white-space: nowrap; font-variant-numeric: tabular-nums; }
+      .score .setwin { font-weight: 700; }
+      .score .muted { color: var(--muted); }
+      .result { display: inline-block; min-width: 22px; text-align: center; padding: 1px 6px; border-radius: 5px; font-size: 0.72rem; font-weight: 700; margin-right: 8px; }
+      .result.win { background: #e3f5e9; color: #0a7d28; }
+      .result.loss { background: #fde6e6; color: #b3261e; }
+      .result.na { background: #eef0f2; color: var(--muted); }
+      .score .sets { font-weight: 700; margin-right: 6px; }
+      .when { white-space: nowrap; }
+      .when .time { color: var(--muted); font-size: 0.82rem; }
+      .div { color: var(--muted); font-size: 0.8rem; }
+      .work { color: var(--muted); }
+      .state { padding: 40px; text-align: center; color: var(--muted); }
+      @media (max-width: 720px) {
+        thead { display: none; }
+        table, tbody, tr, td { display: block; width: 100%; }
+        tr { border-bottom: 8px solid var(--bg); }
+        td { border: none; padding: 4px 14px; }
+        td::before { content: attr(data-label); display: block; font-size: 0.68rem; text-transform: uppercase; color: var(--muted); }
+        td:first-child { padding-top: 12px; }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Reds — WAVL Match Schedule</h1>
+      <p>All Reds teams, live from the WAVL schedule.</p>
+    </header>
+    <div class="wrap">
+      <div class="controls">
+        <input id="search" type="search" placeholder="Filter by venue, division, date, opponent…" />
+        <span class="count" id="count"></span>
+        <button class="btn" id="unplayed">Unplayed only</button>
+        <button class="btn" id="export">⬇ Export to Excel</button>
+        <button class="btn" id="refresh">Refresh</button>
+      </div>
+      <div class="filters" id="filters"></div>
+      <div id="content"><div class="state">Loading matches…</div></div>
+    </div>
+
+    <script>
+      let all = [];
+      let teams = [];
+      let currentRows = []; // rows currently shown (after team + search filters)
+      let selectedTeams = new Set(); // empty = all Reds teams
+      let unplayedOnly = false; // show only games not yet played
+
+      const REDS = /\breds\b/i;
+
+      function esc(s) {
+        return (s || "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+      }
+
+      // Render a team cell: red if it's a Reds team in focus, bold if it won.
+      function cell(name, won) {
+        const safe = esc(name);
+        const cls = [];
+        if (REDS.test(name) && (selectedTeams.size === 0 || selectedTeams.has(name))) cls.push("reds");
+        if (won) cls.push("won");
+        return cls.length ? `<span class="${cls.join(" ")}">${safe}</span>` : safe;
+      }
+
+      // Render the Reds W/L/N/A badge plus the set scores.
+      function renderScoreCell(m) {
+        const badge = { W: "win", L: "loss", "N/A": "na" }[m.result];
+        const tag = badge ? `<span class="result ${badge}">${m.result}</span>` : "";
+        if (m.setScore) {
+          return `${tag}<span class="sets">${esc(m.setScore)}</span>(${renderScore(m.score)})`;
+        }
+        return tag + renderScore(m.score);
+      }
+
+      // Render a score, bolding the winning side of each set (e.g. 22-25, 25-21).
+      function renderScore(score) {
+        if (!score) return '<span class="muted">—</span>';
+        return score
+          .split(",")
+          .map((set) => {
+            const m = set.trim().match(/^(\d+)-(\d+)$/);
+            if (!m) return esc(set.trim());
+            const a = +m[1];
+            const b = +m[2];
+            const A = a > b ? `<span class="setwin">${a}</span>` : a;
+            const B = b > a ? `<span class="setwin">${b}</span>` : b;
+            return `${A}-${B}`;
+          })
+          .join(", ");
+      }
+
+      function renderFilters() {
+        const el = document.getElementById("filters");
+        const isActive = (value) =>
+          value === "all" ? selectedTeams.size === 0 : selectedTeams.has(value);
+        const chip = (label, value) =>
+          `<button class="chip ${isActive(value) ? "active" : ""}" data-team="${esc(value)}">${esc(label)}</button>`;
+        el.innerHTML =
+          chip("All Reds teams", "all") + teams.map((t) => chip(t, t)).join("");
+        el.querySelectorAll(".chip").forEach((b) =>
+          b.addEventListener("click", () => {
+            const v = b.dataset.team;
+            if (v === "all") {
+              selectedTeams.clear();
+            } else if (selectedTeams.has(v)) {
+              selectedTeams.delete(v); // toggle off
+            } else {
+              selectedTeams.add(v); // toggle on (multiple allowed)
+            }
+            renderFilters();
+            applyFilter();
+          })
+        );
+      }
+
+      function render(rows) {
+        const content = document.getElementById("content");
+        if (!rows.length) {
+          content.innerHTML = '<div class="state">No matches found.</div>';
+          return;
+        }
+        const body = rows
+          .map(
+            (m) => `
+          <tr>
+            <td data-label="When" class="when"><div>${esc(m.date)}</div><div class="time">${esc(m.time)}</div></td>
+            <td data-label="Venue">${esc(m.venue)}${m.court ? " (crt " + esc(m.court) + ")" : ""}</td>
+            <td data-label="Home">${cell(m.home, m.homeWon)}</td>
+            <td data-label="Away">${cell(m.away, m.awayWon)}</td>
+            <td data-label="Work" class="work">${cell(m.work)}</td>
+            <td data-label="Score" class="score">${renderScoreCell(m)}</td>
+          </tr>`
+          )
+          .join("");
+        content.innerHTML = `
+          <table>
+            <thead>
+              <tr><th>Date / Time</th><th>Venue</th><th>Home</th><th>Away</th><th>Work</th><th>Score</th></tr>
+            </thead>
+            <tbody>${body}</tbody>
+          </table>`;
+      }
+
+      function applyFilter() {
+        const q = document.getElementById("search").value.toLowerCase().trim();
+        let rows = all;
+
+        if (selectedTeams.size > 0) {
+          rows = rows.filter(
+            (m) => selectedTeams.has(m.home) || selectedTeams.has(m.away) || selectedTeams.has(m.work)
+          );
+        }
+        if (unplayedOnly) {
+          rows = rows.filter((m) => !m.played);
+        }
+        if (q) {
+          rows = rows.filter((m) =>
+            [m.date, m.time, m.venue, m.division, m.home, m.away, m.work]
+              .join(" ")
+              .toLowerCase()
+              .includes(q)
+          );
+        }
+
+        currentRows = rows;
+        document.getElementById("count").textContent =
+          rows.length + (rows.length === all.length ? "" : " / " + all.length) + " matches";
+        render(rows);
+      }
+
+      // Build an Excel 2003 XML (SpreadsheetML) file from the currently shown rows.
+      function exportExcel() {
+        if (!currentRows.length) return;
+        const cols = ["Date", "Time", "Venue", "Court", "Division", "Home", "Away", "Work", "Result", "Sets", "Score"];
+        const xmlEsc = (s) =>
+          String(s || "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+        const xCell = (v) => `<Cell><Data ss:Type="String">${xmlEsc(v)}</Data></Cell>`;
+        const xRow = (vals) => `<Row>${vals.map(xCell).join("")}</Row>`;
+
+        const header = xRow(cols);
+        const body = currentRows
+          .map((m) => xRow([m.date, m.time, m.venue, m.court, m.division, m.home, m.away, m.work, m.result, m.setScore, m.score]))
+          .join("");
+
+        const xml =
+          '<?xml version="1.0"?>' +
+          '<?mso-application progid="Excel.Sheet"?>' +
+          '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" ' +
+          'xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">' +
+          '<Worksheet ss:Name="Reds Schedule"><Table>' +
+          header +
+          body +
+          "</Table></Worksheet></Workbook>";
+
+        const blob = new Blob([xml], { type: "application/vnd.ms-excel" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        const slug = (
+          selectedTeams.size === 0
+            ? "all-reds"
+            : selectedTeams.size === 1
+            ? [...selectedTeams][0]
+            : selectedTeams.size + "-teams"
+        )
+          .replace(/\s+/g, "-")
+          .toLowerCase();
+        a.href = url;
+        a.download = `reds-wavl-schedule-${slug}.xls`;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+
+      async function load() {
+        document.getElementById("content").innerHTML = '<div class="state">Loading matches…</div>';
+        try {
+          const res = await fetch("/api/matches");
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "Failed to load");
+          all = data.matches;
+          teams = data.teams || [];
+          renderFilters();
+          applyFilter();
+        } catch (e) {
+          document.getElementById("content").innerHTML =
+            '<div class="state">Could not load schedule: ' + esc(e.message) + "</div>";
+        }
+      }
+
+      document.getElementById("search").addEventListener("input", applyFilter);
+      document.getElementById("unplayed").addEventListener("click", (e) => {
+        unplayedOnly = !unplayedOnly;
+        e.currentTarget.classList.toggle("active", unplayedOnly);
+        applyFilter();
+      });
+      document.getElementById("export").addEventListener("click", exportExcel);
+      document.getElementById("refresh").addEventListener("click", load);
+      load();
+    </script>
+  </body>
+</html>
