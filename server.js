@@ -1,5 +1,9 @@
 import express from "express";
 import * as cheerio from "cheerio";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const SOURCE_URL =
   "https://volleyball.exposureevents.com/259835/wavl/documents/schedule?layout=datetime";
@@ -176,8 +180,15 @@ app.get("/api/matches", async (req, res) => {
   }
 });
 
-app.use(express.static("public"));
+// Absolute path so static files resolve correctly regardless of CWD (e.g. on Vercel).
+app.use(express.static(path.join(__dirname, "public")));
 
-app.listen(PORT, () => {
-  console.log(`Reds WAVL schedule running at http://localhost:${PORT}`);
-});
+// Only start a long-running server when run directly (local dev).
+// On Vercel the app is imported and invoked as a serverless function instead.
+if (!process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`Reds WAVL schedule running at http://localhost:${PORT}`);
+  });
+}
+
+export default app;
