@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Reds — WAVL Schedule</title>
+    <title>Perth Reds - WAVL Match Schedule 2026</title>
     <style>
       :root {
         --red: #c8102e;
@@ -21,7 +21,18 @@
       header {
         background: var(--red);
         color: #fff;
-        padding: 20px 24px;
+        padding: 16px 24px;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+      }
+      header img.logo {
+        height: 64px;
+        width: auto;
+        background: #fff;
+        border-radius: 50%;
+        padding: 4px;
+        flex-shrink: 0;
       }
       header h1 { margin: 0; font-size: 1.4rem; }
       header p { margin: 4px 0 0; opacity: 0.85; font-size: 0.85rem; }
@@ -96,6 +107,7 @@
       .div { color: var(--muted); font-size: 0.8rem; }
       .work { color: var(--muted); }
       .state { padding: 40px; text-align: center; color: var(--muted); }
+      .state img { display: block; margin: 0 auto 12px; width: 84px; height: auto; }
       @media (max-width: 720px) {
         thead { display: none; }
         table, tbody, tr, td { display: block; width: 100%; }
@@ -108,8 +120,11 @@
   </head>
   <body>
     <header>
-      <h1>Reds — WAVL Match Schedule</h1>
-      <p>All Reds teams, live from the WAVL schedule.</p>
+      <img class="logo" src="perth_reds_logo.png" alt="Perth Reds Volleyball" />
+      <div>
+        <h1>Perth Reds - WAVL Match Schedule 2026</h1>
+        <p>All Reds teams, live from the WAVL schedule.</p>
+      </div>
     </header>
     <div class="wrap">
       <div class="controls">
@@ -120,7 +135,7 @@
         <button class="btn" id="refresh">Refresh</button>
       </div>
       <div class="filters" id="filters"></div>
-      <div id="content"><div class="state">Loading matches…</div></div>
+      <div id="content"><div class="state"><img src="perth_reds_bounce.gif" alt="Loading" />Loading matches…</div></div>
     </div>
 
     <script>
@@ -213,7 +228,7 @@
             }
             return `
           <tr class="${alt ? "day-alt" : ""}">
-            <td data-label="When" class="when"><div>${esc(m.date)}</div><div class="time">${esc(m.time)}</div></td>
+            <td data-label="When" class="when">${esc(m.date)} <span class="time">${esc(m.time)}</span></td>
             <td data-label="Venue">${esc(m.venue)}${m.court ? " (crt " + esc(m.court) + ")" : ""}</td>
             <td data-label="Home">${cell(m.home)}</td>
             <td data-label="Away">${cell(m.away)}</td>
@@ -315,7 +330,8 @@
       }
 
       async function load() {
-        document.getElementById("content").innerHTML = '<div class="state">Loading matches…</div>';
+        document.getElementById("content").innerHTML =
+          '<div class="state"><img src="perth_reds_bounce.gif" alt="Loading" />Loading matches…</div>';
         try {
           const res = await fetch("/api/matches");
           const data = await res.json();

@@ -41,12 +41,12 @@ function teamSortKey(name) {
   return [divRank, gradeIdx];
 }
 
-// "Saturday, April 11, 2026" -> "Sat 11-Apr-2026". Falls back to the raw string.
+// "Saturday, April 11, 2026" -> "Sat 11 Apr 2026". Falls back to the raw string.
 function formatDate(raw) {
   const d = new Date(raw);
   if (Number.isNaN(d.getTime())) return raw;
   const dd = String(d.getDate()).padStart(2, "0");
-  return `${DAYS[d.getDay()]} ${dd}-${MONTHS[d.getMonth()]}-${d.getFullYear()}`;
+  return `${DAYS[d.getDay()]} ${dd} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
 }
 
 function parseSchedule(html) {
