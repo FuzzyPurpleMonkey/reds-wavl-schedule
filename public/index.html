@@ -80,6 +80,7 @@
       th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); font-size: 0.9rem; vertical-align: top; }
       th { background: #fafbfc; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
       tr:last-child td { border-bottom: none; }
+      tbody tr.day-alt td { background: #f4f6f8; }
       .reds { font-weight: 600; color: var(--red); }
       .won { font-weight: 700; }
       .score { white-space: nowrap; font-variant-numeric: tabular-nums; }
@@ -115,7 +116,7 @@
         <input id="search" type="search" placeholder="Filter by venue, division, date, opponent…" />
         <span class="count" id="count"></span>
         <button class="btn" id="unplayed">Unplayed only</button>
-        <button class="btn" id="export">⬇ Export to Excel</button>
+        <button class="btn" id="export">⬇ Export to CSV</button>
         <button class="btn" id="refresh">Refresh</button>
       </div>
       <div class="filters" id="filters"></div>
@@ -127,7 +128,7 @@
       let teams = [];
       let currentRows = []; // rows currently shown (after team + search filters)
       let selectedTeams = new Set(); // empty = all Reds teams
-      let unplayedOnly = false; // show only games not yet played
+      let unplayedOnly = true; // show only games not yet played (default on)
 
       const REDS = /\breds\b/i;
 
@@ -135,13 +136,13 @@
         return (s || "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
       }
 
-      // Render a team cell: red if it's a Reds team in focus, bold if it won.
-      function cell(name, won) {
+      // Render a team cell: red if it's a Reds team in focus.
+      function cell(name) {
         const safe = esc(name);
-        const cls = [];
-        if (REDS.test(name) && (selectedTeams.size === 0 || selectedTeams.has(name))) cls.push("reds");
-        if (won) cls.push("won");
-        return cls.length ? `<span class="${cls.join(" ")}">${safe}</span>` : safe;
+        if (REDS.test(name) && (selectedTeams.size === 0 || selectedTeams.has(name))) {
+          return `<span class="reds">${safe}</span>`;
+        }
+        return safe;
       }
 
       // Render the Reds W/L/N/A badge plus the set scores.
@@ -201,18 +202,25 @@
           content.innerHTML = '<div class="state">No matches found.</div>';
           return;
         }
+        let prevDate = null;
+        let alt = false;
         const body = rows
-          .map(
-            (m) => `
-          <tr>
+          .map((m) => {
+            // Flip the shade each time the date changes, so a day's games share a band.
+            if (m.date !== prevDate) {
+              alt = !alt;
+              prevDate = m.date;
+            }
+            return `
+          <tr class="${alt ? "day-alt" : ""}">
             <td data-label="When" class="when"><div>${esc(m.date)}</div><div class="time">${esc(m.time)}</div></td>
             <td data-label="Venue">${esc(m.venue)}${m.court ? " (crt " + esc(m.court) + ")" : ""}</td>
-            <td data-label="Home">${cell(m.home, m.homeWon)}</td>
-            <td data-label="Away">${cell(m.away, m.awayWon)}</td>
+            <td data-label="Home">${cell(m.home)}</td>
+            <td data-label="Away">${cell(m.away)}</td>
             <td data-label="Work" class="work">${cell(m.work)}</td>
             <td data-label="Score" class="score">${renderScoreCell(m)}</td>
-          </tr>`
-          )
+          </tr>`;
+          })
           .join("");
         content.innerHTML = `
           <table>
@@ -248,33 +256,47 @@
         document.getElementById("count").textContent =
           rows.length + (rows.length === all.length ? "" : " / " + all.length) + " matches";
         render(rows);
+        writeStateToURL();
       }
 
-      // Build an Excel 2003 XML (SpreadsheetML) file from the currently shown rows.
-      function exportExcel() {
+      // Reflect the current filters in the URL so the view can be shared/bookmarked.
+      function writeStateToURL() {
+        const p = new URLSearchParams();
+        if (selectedTeams.size) p.set("teams", [...selectedTeams].join(","));
+        if (!unplayedOnly) p.set("unplayed", "0"); // default is on; only record when off
+        const q = document.getElementById("search").value.trim();
+        if (q) p.set("q", q);
+        const qs = p.toString();
+        history.replaceState(null, "", qs ? "?" + qs : location.pathname);
+      }
+
+      // Restore filters from the URL on page load.
+      function readStateFromURL() {
+        const p = new URLSearchParams(location.search);
+        const t = p.get("teams");
+        selectedTeams = new Set(t ? t.split(",").filter(Boolean) : []);
+        if (p.has("unplayed")) unplayedOnly = p.get("unplayed") !== "0";
+        document.getElementById("search").value = p.get("q") || "";
+      }
+
+      // Build a CSV file from the currently shown rows.
+      function exportCSV() {
         if (!currentRows.length) return;
         const cols = ["Date", "Time", "Venue", "Court", "Division", "Home", "Away", "Work", "Result", "Sets", "Score"];
-        const xmlEsc = (s) =>
-          String(s || "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-        const xCell = (v) => `<Cell><Data ss:Type="String">${xmlEsc(v)}</Data></Cell>`;
-        const xRow = (vals) => `<Row>${vals.map(xCell).join("")}</Row>`;
+        const csvCell = (v) => {
+          const s = String(v == null ? "" : v);
+          return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+        };
+        const row = (vals) => vals.map(csvCell).join(",");
 
-        const header = xRow(cols);
-        const body = currentRows
-          .map((m) => xRow([m.date, m.time, m.venue, m.court, m.division, m.home, m.away, m.work, m.result, m.setScore, m.score]))
-          .join("");
+        const lines = [row(cols)];
+        for (const m of currentRows) {
+          lines.push(row([m.date, m.time, m.venue, m.court, m.division, m.home, m.away, m.work, m.result, m.setScore, m.score]));
+        }
+        // Prepend a UTF-8 BOM so Excel reads accented characters correctly.
+        const csv = "﻿" + lines.join("\r\n");
 
-        const xml =
-          '<?xml version="1.0"?>' +
-          '<?mso-application progid="Excel.Sheet"?>' +
-          '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" ' +
-          'xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">' +
-          '<Worksheet ss:Name="Reds Schedule"><Table>' +
-          header +
-          body +
-          "</Table></Worksheet></Workbook>";
-
-        const blob = new Blob([xml], { type: "application/vnd.ms-excel" });
+        const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         const slug = (
@@ -287,7 +309,7 @@
           .replace(/\s+/g, "-")
           .toLowerCase();
         a.href = url;
-        a.download = `reds-wavl-schedule-${slug}.xls`;
+        a.download = `reds-wavl-schedule-${slug}.csv`;
         a.click();
         URL.revokeObjectURL(url);
       }
@@ -309,12 +331,14 @@
       }
 
       document.getElementById("search").addEventListener("input", applyFilter);
+      readStateFromURL();
+      document.getElementById("unplayed").classList.toggle("active", unplayedOnly);
       document.getElementById("unplayed").addEventListener("click", (e) => {
         unplayedOnly = !unplayedOnly;
         e.currentTarget.classList.toggle("active", unplayedOnly);
         applyFilter();
       });
-      document.getElementById("export").addEventListener("click", exportExcel);
+      document.getElementById("export").addEventListener("click", exportCSV);
       document.getElementById("refresh").addEventListener("click", load);
       load();
     </script>
