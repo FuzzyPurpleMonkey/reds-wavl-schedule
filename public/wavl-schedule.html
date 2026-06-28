@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Perth Reds - WAVL Schedule 2026</title>
+    <style>
+      :root {
+        --red: #c8102e;
+        --bg: #f6f7f9;
+        --line: #d7dbe0;
+        --muted: #6b7280;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        background: var(--bg);
+        color: #111;
+      }
+      header {
+        background: var(--red);
+        color: #fff;
+        padding: 16px 24px;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+      }
+      header img.logo { height: 64px; width: auto; background: #fff; border-radius: 50%; padding: 4px; flex-shrink: 0; }
+      header h1 { margin: 0; font-size: 1.4rem; }
+      header p { margin: 4px 0 0; opacity: 0.85; font-size: 0.85rem; }
+      header .nav { margin-left: auto; }
+      header .nav a { color: #fff; text-decoration: none; font-size: 0.85rem; border: 1px solid rgba(255,255,255,0.5); padding: 8px 12px; border-radius: 8px; }
+      header .nav a:hover { background: rgba(255,255,255,0.15); }
+      .wrap { max-width: 1200px; margin: 0 auto; padding: 20px 16px 60px; }
+      .controls { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+      .btn { padding: 10px 14px; border: 1px solid var(--line); background: #fff; border-radius: 8px; cursor: pointer; font-size: 0.9rem; }
+      .btn:hover { background: #f0f0f0; }
+      .filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
+      .chip { padding: 7px 12px; border: 1px solid var(--line); background: #fff; border-radius: 999px; cursor: pointer; font-size: 0.82rem; color: #333; }
+      .chip:hover { border-color: var(--red); }
+      .chip.active { background: var(--red); border-color: var(--red); color: #fff; font-weight: 600; }
+      h2.day { margin: 26px 0 8px; font-size: 1.05rem; color: var(--red); border-bottom: 2px solid var(--red); padding-bottom: 4px; }
+      table { width: 100%; border-collapse: collapse; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.06); margin-bottom: 8px; }
+      th, td { text-align: left; padding: 8px 10px; border: 1px solid var(--line); font-size: 0.88rem; vertical-align: top; }
+      th { background: #fafbfc; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+      td.team { font-weight: 600; color: var(--red); white-space: nowrap; }
+      td.time, td.court { white-space: nowrap; }
+      td.duty { white-space: nowrap; }
+      .blank { min-width: 120px; }
+      tr.spacer td { height: 12px; padding: 0; background: var(--bg); border-left: 0; border-right: 0; }
+      .state { padding: 40px; text-align: center; color: var(--muted); }
+      .state img { display: block; margin: 0 auto 12px; width: 84px; height: auto; }
+      @media print {
+        header .nav, .controls { display: none; }
+        body { background: #fff; }
+        h2.day { color: #000; border-color: #000; }
+        td.team { color: #000; }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <img class="logo" src="perth_reds_logo.png" alt="Perth Reds Volleyball" />
+      <div>
+        <h1>Perth Reds - WAVL Schedule 2026</h1>
+        <p>Team duty &amp; bag roster, grouped by date.</p>
+      </div>
+      <div class="nav"><a href="/">&larr; Match schedule</a></div>
+    </header>
+    <div class="wrap">
+      <div class="controls">
+        <button class="btn" id="export">⬇ Export to CSV</button>
+      </div>
+      <div class="filters" id="filters"></div>
+      <div id="content"><div class="state"><img src="perth_reds_bounce.gif" alt="Loading" />Loading schedule…</div></div>
+    </div>
+
+    <script>
+      const REDS = /\breds\b/i;
+      let all = [];
+      let teams = [];
+      let selectedTeams = new Set();
+      let exportRows = []; // rows currently shown, in display order
+
+      function esc(s) {
+        return (s || "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+      }
+
+      function timeMin(t) {
+        const m = (t || "").match(/(\d+):(\d+)\s*(AM|PM)/i);
+        if (!m) return 0;
+        let h = +m[1] % 12;
+        if (/pm/i.test(m[3])) h += 12;
+        return h * 60 + +m[2];
+      }
+
+      // One row per Reds team that is playing, with the team's duty (work) match
+      // on the same date shown as time + court.
+      function buildRows() {
+        // Map "dateISO|team" -> list of "time (Crt n)" for that team's duty matches.
+        const duty = new Map();
+        for (const m of all) {
+          if (REDS.test(m.work)) {
+            const k = m.dateISO + "|" + m.work;
+            if (!duty.has(k)) duty.set(k, []);
+            duty.get(k).push(`${m.time}${m.court ? " (Crt " + m.court + ")" : ""}`);
+          }
+        }
+
+        const rows = [];
+        for (const m of all) {
+          const sides = [];
+          if (REDS.test(m.home)) sides.push([m.home, m.away]);
+          if (REDS.test(m.away)) sides.push([m.away, m.home]);
+          for (const [team, opponent] of sides) {
+            const d = duty.get(m.dateISO + "|" + team);
+            rows.push({
+              date: m.date,
+              dateISO: m.dateISO,
+              team,
+              opponent,
+              venue: m.venue,
+              time: m.time,
+              court: m.court,
+              duty: d ? d.join(", ") : "",
+            });
+          }
+        }
+        return rows;
+      }
+
+      function renderFilters() {
+        const el = document.getElementById("filters");
+        const isActive = (v) => (v === "all" ? selectedTeams.size === 0 : selectedTeams.has(v));
+        const chip = (label, value) =>
+          `<button class="chip ${isActive(value) ? "active" : ""}" data-team="${esc(value)}">${esc(label)}</button>`;
+        el.innerHTML = chip("All teams", "all") + teams.map((t) => chip(t, t)).join("");
+        el.querySelectorAll(".chip").forEach((b) =>
+          b.addEventListener("click", () => {
+            const v = b.dataset.team;
+            if (v === "all") selectedTeams.clear();
+            else if (selectedTeams.has(v)) selectedTeams.delete(v);
+            else selectedTeams.add(v);
+            renderFilters();
+            renderTable();
+          })
+        );
+      }
+
+      function renderTable() {
+        const content = document.getElementById("content");
+        let rows = buildRows();
+        // Only games from today onwards.
+        const now = new Date();
+        const todayISO = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+        rows = rows.filter((r) => r.dateISO && r.dateISO >= todayISO);
+        if (selectedTeams.size) rows = rows.filter((r) => selectedTeams.has(r.team));
+        if (!rows.length) {
+          content.innerHTML = '<div class="state">No games found.</div>';
+          return;
+        }
+
+        // Group by date, ordered chronologically; within a date by time then team.
+        const byDate = new Map();
+        for (const r of rows) {
+          if (!byDate.has(r.dateISO)) byDate.set(r.dateISO, { label: r.date, items: [] });
+          byDate.get(r.dateISO).items.push(r);
+        }
+        const dates = [...byDate.keys()].sort();
+        exportRows = [];
+
+        const head =
+          "<thead><tr>" +
+          ["Team", "Coach", "Venue", "Opponent", "Time", "Court", "Duty", "Bag Collection", "Bag Return"]
+            .map((h) => `<th>${h}</th>`)
+            .join("") +
+          "</tr></thead>";
+
+        content.innerHTML = dates
+          .map((iso) => {
+            const g = byDate.get(iso);
+            g.items.sort(
+              (a, b) => (a.venue || "").localeCompare(b.venue || "") || timeMin(a.time) - timeMin(b.time)
+            );
+            exportRows.push(...g.items);
+            let prevVenue = null;
+            const body = g.items
+              .map((r) => {
+                // Blank spacer row between venue groups.
+                const sep =
+                  prevVenue !== null && r.venue !== prevVenue
+                    ? '<tr class="spacer"><td colspan="9"></td></tr>'
+                    : "";
+                prevVenue = r.venue;
+                return (
+                  sep +
+                  `
+              <tr>
+                <td class="team">${esc(r.team)}</td>
+                <td class="blank"></td>
+                <td>${esc(r.venue)}</td>
+                <td>${esc(r.opponent)}</td>
+                <td class="time">${esc(r.time)}</td>
+                <td class="court">${esc(r.court)}</td>
+                <td class="duty">${esc(r.duty)}</td>
+                <td class="blank"></td>
+                <td class="blank"></td>
+              </tr>`
+                );
+              })
+              .join("");
+            return `<h2 class="day">${esc(g.label)}</h2><table>${head}<tbody>${body}</tbody></table>`;
+          })
+          .join("");
+      }
+
+      async function load() {
+        try {
+          const res = await fetch("/api/matches");
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "Failed to load");
+          all = data.matches;
+          teams = data.teams || [];
+          renderFilters();
+          renderTable();
+        } catch (e) {
+          document.getElementById("content").innerHTML =
+            '<div class="state">Could not load schedule: ' + esc(e.message) + "</div>";
+        }
+      }
+
+      function exportCSV() {
+        if (!exportRows.length) return;
+        const cols = ["Date", "Team", "Coach", "Venue", "Opponent", "Time", "Court", "Duty", "Bag Collection", "Bag Return"];
+        const csvCell = (v) => {
+          const s = String(v == null ? "" : v);
+          return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+        };
+        const row = (vals) => vals.map(csvCell).join(",");
+        const lines = [row(cols)];
+        for (const r of exportRows) {
+          lines.push(row([r.date, r.team, "", r.venue, r.opponent, r.time, r.court, r.duty, "", ""]));
+        }
+        const csv = "﻿" + lines.join("\r\n");
+
+        const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        const slug = (
+          selectedTeams.size === 0
+            ? "all-reds"
+            : selectedTeams.size === 1
+            ? [...selectedTeams][0]
+            : selectedTeams.size + "-teams"
+        )
+          .replace(/\s+/g, "-")
+          .toLowerCase();
+        a.href = url;
+        a.download = `wavl-roster-${slug}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+
+      document.getElementById("export").addEventListener("click", exportCSV);
+      load();
+    </script>
+  </body>
+</html>

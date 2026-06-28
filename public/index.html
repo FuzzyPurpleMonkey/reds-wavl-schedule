@@ -36,6 +36,9 @@
       }
       header h1 { margin: 0; font-size: 1.4rem; }
       header p { margin: 4px 0 0; opacity: 0.85; font-size: 0.85rem; }
+      header .nav { margin-left: auto; }
+      header .nav a { color: #fff; text-decoration: none; font-size: 0.85rem; border: 1px solid rgba(255,255,255,0.5); padding: 8px 12px; border-radius: 8px; white-space: nowrap; }
+      header .nav a:hover { background: rgba(255,255,255,0.15); }
       .wrap { max-width: 1200px; margin: 0 auto; padding: 20px 16px 60px; }
       .controls {
         display: flex;
@@ -125,11 +128,13 @@
         <h1>Perth Reds - WAVL Match Schedule 2026</h1>
         <p>All Reds teams, live from the WAVL schedule.</p>
       </div>
+      <div class="nav"><a href="/wavl-schedule">Duty &amp; bag roster &rarr;</a></div>
     </header>
     <div class="wrap">
       <div class="controls">
         <input id="search" type="search" placeholder="Filter by venue, division, date, opponent…" />
         <span class="count" id="count"></span>
+        <button class="btn" id="nextweek">Next week</button>
         <button class="btn" id="unplayed">Unplayed only</button>
         <button class="btn" id="export">⬇ Export to CSV</button>
         <button class="btn" id="refresh">Refresh</button>
@@ -144,6 +149,7 @@
       let currentRows = []; // rows currently shown (after team + search filters)
       let selectedTeams = new Set(); // empty = all Reds teams
       let unplayedOnly = true; // show only games not yet played (default on)
+      let nextWeekOnly = false; // show only games in the next 7 days
 
       const REDS = /\breds\b/i;
 
@@ -258,6 +264,16 @@
         if (unplayedOnly) {
           rows = rows.filter((m) => !m.played);
         }
+        if (nextWeekOnly) {
+          const isoLocal = (d) =>
+            `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+          const today = new Date();
+          const end = new Date();
+          end.setDate(end.getDate() + 7);
+          const from = isoLocal(today);
+          const to = isoLocal(end);
+          rows = rows.filter((m) => m.dateISO && m.dateISO >= from && m.dateISO <= to);
+        }
         if (q) {
           rows = rows.filter((m) =>
             [m.date, m.time, m.venue, m.division, m.home, m.away, m.work]
@@ -279,6 +295,7 @@
         const p = new URLSearchParams();
         if (selectedTeams.size) p.set("teams", [...selectedTeams].join(","));
         if (!unplayedOnly) p.set("unplayed", "0"); // default is on; only record when off
+        if (nextWeekOnly) p.set("next", "1");
         const q = document.getElementById("search").value.trim();
         if (q) p.set("q", q);
         const qs = p.toString();
@@ -291,6 +308,7 @@
         const t = p.get("teams");
         selectedTeams = new Set(t ? t.split(",").filter(Boolean) : []);
         if (p.has("unplayed")) unplayedOnly = p.get("unplayed") !== "0";
+        nextWeekOnly = p.get("next") === "1";
         document.getElementById("search").value = p.get("q") || "";
       }
 
@@ -349,9 +367,15 @@
       document.getElementById("search").addEventListener("input", applyFilter);
       readStateFromURL();
       document.getElementById("unplayed").classList.toggle("active", unplayedOnly);
+      document.getElementById("nextweek").classList.toggle("active", nextWeekOnly);
       document.getElementById("unplayed").addEventListener("click", (e) => {
         unplayedOnly = !unplayedOnly;
         e.currentTarget.classList.toggle("active", unplayedOnly);
+        applyFilter();
+      });
+      document.getElementById("nextweek").addEventListener("click", (e) => {
+        nextWeekOnly = !nextWeekOnly;
+        e.currentTarget.classList.toggle("active", nextWeekOnly);
         applyFilter();
       });
       document.getElementById("export").addEventListener("click", exportCSV);

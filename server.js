@@ -49,6 +49,15 @@ function formatDate(raw) {
   return `${DAYS[d.getDay()]} ${dd} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
 }
 
+// "Saturday, April 11, 2026" -> "2026-04-11" for date-range comparisons.
+function toISODate(raw) {
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return "";
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${mm}-${dd}`;
+}
+
 function parseSchedule(html) {
   const $ = cheerio.load(html);
 
@@ -63,7 +72,9 @@ function parseSchedule(html) {
   // Each date is its own <table class="division-schedule"> with the date in <h3>.
   $("table.division-schedule").each((_, table) => {
     const $table = $(table);
-    const date = formatDate(clean($table.find("thead h3").first().text()));
+    const rawDate = clean($table.find("thead h3").first().text());
+    const date = formatDate(rawDate);
+    const dateISO = toISODate(rawDate);
 
     $table.find("tr.game").each((_, row) => {
       const cells = $(row).children("td");
@@ -121,6 +132,7 @@ function parseSchedule(html) {
 
       matches.push({
         date,
+        dateISO,
         time,
         venue: venueFull,
         court,
@@ -181,6 +193,11 @@ app.get("/api/matches", async (req, res) => {
 });
 
 // Absolute path so static files resolve correctly regardless of CWD (e.g. on Vercel).
+// Pretty route for the duty/bag roster page.
+app.get("/wavl-schedule", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "wavl-schedule.html"));
+});
+
 app.use(express.static(path.join(__dirname, "public")));
 
 // Only start a long-running server when run directly (local dev).
