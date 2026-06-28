@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Perth Reds - WAVL Schedule 2026</title>
+    <title>Perth Reds - WAVJL Schedule 2026</title>
     <style>
       :root {
         --red: #c8102e;
@@ -64,12 +64,12 @@
     <header>
       <img class="logo" src="perth_reds_logo.png" alt="Perth Reds Volleyball" />
       <div>
-        <h1>Perth Reds - WAVL Schedule 2026</h1>
-        <p>Team duty &amp; bag roster, grouped by date.</p>
+        <h1>Perth Reds - WAVJL Schedule 2026</h1>
+        <p>Junior team duty &amp; bag roster, grouped by date.</p>
       </div>
       <div class="nav">
         <a href="/">&larr; Match schedule</a>
-        <a href="/wavjl-schedule">WAVJL roster</a>
+        <a href="/wavl-schedule">WAVL roster</a>
       </div>
     </header>
     <div class="wrap">
@@ -125,6 +125,7 @@
               date: m.date,
               dateISO: m.dateISO,
               team,
+              division: m.division,
               opponent,
               venue: m.venue,
               time: m.time,
@@ -174,7 +175,7 @@
           return;
         }
 
-        // Group by date, ordered chronologically; within a date by time then team.
+        // Group by date, ordered chronologically; within a date by venue then time.
         const byDate = new Map();
         for (const r of rows) {
           if (!byDate.has(r.dateISO)) byDate.set(r.dateISO, { label: r.date, items: [] });
@@ -185,7 +186,7 @@
 
         const head =
           "<thead><tr>" +
-          ["Team", "Coach", "Venue", "Opponent", "Time", "Court", "Duty", "Bag Collection", "Bag Return"]
+          ["Team", "Division", "Coach", "Venue", "Court", "Opponent", "Time", "Duty"]
             .map((h) => `<th>${h}</th>`)
             .join("") +
           "</tr></thead>";
@@ -203,7 +204,7 @@
                 // Blank spacer row between venue groups.
                 const sep =
                   prevVenue !== null && r.venue !== prevVenue
-                    ? '<tr class="spacer"><td colspan="9"></td></tr>'
+                    ? '<tr class="spacer"><td colspan="8"></td></tr>'
                     : "";
                 prevVenue = r.venue;
                 return (
@@ -211,14 +212,13 @@
                   `
               <tr>
                 <td class="team">${esc(r.team)}</td>
+                <td>${esc(r.division)}</td>
                 <td class="blank"></td>
                 <td>${esc(r.venue)}</td>
+                <td class="court">${esc(r.court)}</td>
                 <td>${esc(r.opponent)}</td>
                 <td class="time">${esc(r.time)}</td>
-                <td class="court">${esc(r.court)}</td>
                 <td class="duty">${esc(r.duty)}</td>
-                <td class="blank"></td>
-                <td class="blank"></td>
               </tr>`
                 );
               })
@@ -230,7 +230,7 @@
 
       async function load() {
         try {
-          const res = await fetch("/api/matches");
+          const res = await fetch("/api/matches?league=wavjl");
           const data = await res.json();
           if (!res.ok) throw new Error(data.error || "Failed to load");
           all = data.matches;
@@ -245,7 +245,7 @@
 
       function exportCSV() {
         if (!exportRows.length) return;
-        const cols = ["Date", "Team", "Coach", "Venue", "Opponent", "Time", "Court", "Duty", "Bag Collection", "Bag Return"];
+        const cols = ["Date", "Team", "Division", "Coach", "Venue", "Court", "Opponent", "Time", "Duty"];
         const csvCell = (v) => {
           const s = String(v == null ? "" : v);
           return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
@@ -253,7 +253,7 @@
         const row = (vals) => vals.map(csvCell).join(",");
         const lines = [row(cols)];
         for (const r of exportRows) {
-          lines.push(row([r.date, r.team, "", r.venue, r.opponent, r.time, r.court, r.duty, "", ""]));
+          lines.push(row([r.date, r.team, r.division, "", r.venue, r.court, r.opponent, r.time, r.duty]));
         }
         const csv = "﻿" + lines.join("\r\n");
 
@@ -270,7 +270,7 @@
           .replace(/\s+/g, "-")
           .toLowerCase();
         a.href = url;
-        a.download = `wavl-roster-${slug}.csv`;
+        a.download = `wavjl-roster-${slug}.csv`;
         a.click();
         URL.revokeObjectURL(url);
       }

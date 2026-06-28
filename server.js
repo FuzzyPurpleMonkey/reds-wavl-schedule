@@ -5,14 +5,16 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const SOURCE_URL =
-  "https://volleyball.exposureevents.com/259835/wavl/documents/schedule?layout=datetime";
+const SOURCES = {
+  wavl: "https://volleyball.exposureevents.com/259835/wavl/documents/schedule?layout=datetime",
+  wavjl: "https://volleyball.exposureevents.com/267727/wavjl-2026/documents/schedule?layout=datetime",
+};
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Simple in-memory cache so we don't hammer the source site on every page load.
-let cache = { at: 0, data: null };
+// Simple in-memory cache (per league) so we don't hammer the source site.
+const cache = {};
 const CACHE_MS = 5 * 60 * 1000; // 5 minutes
 
 const clean = (s) => (s || "").replace(/\s+/g, " ").trim();
@@ -152,11 +154,14 @@ function parseSchedule(html) {
   return matches;
 }
 
-async function getMatches() {
-  if (cache.data && Date.now() - cache.at < CACHE_MS) {
-    return cache.data;
+async function getMatches(league) {
+  const url = SOURCES[league];
+  if (!url) throw new Error(`Unknown league: ${league}`);
+  const c = cache[league];
+  if (c && Date.now() - c.at < CACHE_MS) {
+    return c.data;
   }
-  const res = await fetch(SOURCE_URL, {
+  const res = await fetch(url, {
     headers: { "User-Agent": "Mozilla/5.0 (reds-wavl-schedule)" },
   });
   if (!res.ok) {
@@ -164,13 +169,14 @@ async function getMatches() {
   }
   const html = await res.text();
   const data = parseSchedule(html);
-  cache = { at: Date.now(), data };
+  cache[league] = { at: Date.now(), data };
   return data;
 }
 
 app.get("/api/matches", async (req, res) => {
+  const league = req.query.league || "wavl";
   try {
-    const matches = await getMatches();
+    const matches = await getMatches(league);
 
     // Distinct Reds teams that appear as home, away, or work, for the filter buttons.
     const teamSet = new Set();
@@ -182,19 +188,21 @@ app.get("/api/matches", async (req, res) => {
     const teams = [...teamSet].sort((a, b) => {
       const ka = teamSortKey(a);
       const kb = teamSortKey(b);
-      return ka[0] - kb[0] || ka[1] - kb[1] || a.localeCompare(b);
+      return ka[0] - kb[0] || ka[1] - kb[1] || a.localeCompare(b, undefined, { numeric: true });
     });
 
-    res.json({ count: matches.length, source: SOURCE_URL, teams, matches });
+    res.json({ count: matches.length, league, source: SOURCES[league], teams, matches });
   } catch (err) {
     res.status(502).json({ error: err.message });
   }
 });
 
-// Absolute path so static files resolve correctly regardless of CWD (e.g. on Vercel).
-// Pretty route for the duty/bag roster page.
+// Pretty routes for the duty/bag roster pages.
 app.get("/wavl-schedule", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "wavl-schedule.html"));
+});
+app.get("/wavjl-schedule", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "wavjl-schedule.html"));
 });
 
 app.use(express.static(path.join(__dirname, "public")));
