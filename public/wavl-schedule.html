@@ -36,6 +36,7 @@
       .controls { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
       .btn { padding: 10px 14px; border: 1px solid var(--line); background: #fff; border-radius: 8px; cursor: pointer; font-size: 0.9rem; }
       .btn:hover { background: #f0f0f0; }
+      .btn.active { background: var(--red); border-color: var(--red); color: #fff; font-weight: 600; }
       .filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
       .chip { padding: 7px 12px; border: 1px solid var(--line); background: #fff; border-radius: 999px; cursor: pointer; font-size: 0.82rem; color: #333; }
       .chip:hover { border-color: var(--red); }
@@ -70,6 +71,7 @@
     </header>
     <div class="wrap">
       <div class="controls">
+        <button class="btn" id="nextweek">Next week only</button>
         <button class="btn" id="export">⬇ Export to CSV</button>
       </div>
       <div class="filters" id="filters"></div>
@@ -82,6 +84,7 @@
       let teams = [];
       let selectedTeams = new Set();
       let exportRows = []; // rows currently shown, in display order
+      let nextWeekOnly = true; // show only games in the next 7 days (default on)
 
       function esc(s) {
         return (s || "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -152,9 +155,16 @@
         const content = document.getElementById("content");
         let rows = buildRows();
         // Only games from today onwards.
-        const now = new Date();
-        const todayISO = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+        const isoLocal = (d) =>
+          `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+        const todayISO = isoLocal(new Date());
         rows = rows.filter((r) => r.dateISO && r.dateISO >= todayISO);
+        if (nextWeekOnly) {
+          const end = new Date();
+          end.setDate(end.getDate() + 7);
+          const endISO = isoLocal(end);
+          rows = rows.filter((r) => r.dateISO <= endISO);
+        }
         if (selectedTeams.size) rows = rows.filter((r) => selectedTeams.has(r.team));
         if (!rows.length) {
           content.innerHTML = '<div class="state">No games found.</div>';
@@ -263,6 +273,12 @@
       }
 
       document.getElementById("export").addEventListener("click", exportCSV);
+      document.getElementById("nextweek").classList.toggle("active", nextWeekOnly);
+      document.getElementById("nextweek").addEventListener("click", (e) => {
+        nextWeekOnly = !nextWeekOnly;
+        e.currentTarget.classList.toggle("active", nextWeekOnly);
+        renderTable();
+      });
       load();
     </script>
   </body>

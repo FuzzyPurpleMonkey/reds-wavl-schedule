@@ -18,8 +18,8 @@ const CACHE_MS = 5 * 60 * 1000; // 5 minutes
 const clean = (s) => (s || "").replace(/\s+/g, " ").trim();
 const isReds = (name) => /\breds\b/i.test(name);
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 // Sort key for ordering teams by division: SL first, then D1, D2, ...
 // and within each division by gender/grade: M, W, RM, RW.
@@ -41,12 +41,11 @@ function teamSortKey(name) {
   return [divRank, gradeIdx];
 }
 
-// "Saturday, April 11, 2026" -> "Sat 11 Apr 2026". Falls back to the raw string.
+// "Saturday, April 11, 2026" -> "Saturday, 11 April 2026". Falls back to the raw string.
 function formatDate(raw) {
   const d = new Date(raw);
   if (Number.isNaN(d.getTime())) return raw;
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${DAYS[d.getDay()]} ${dd} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+  return `${DAYS[d.getDay()]}, ${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
 }
 
 // "Saturday, April 11, 2026" -> "2026-04-11" for date-range comparisons.
