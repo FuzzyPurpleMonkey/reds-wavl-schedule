@@ -83,6 +83,25 @@
 
     <script>
       const REDS = /\breds\b/i;
+
+      // Head coach per team, keyed by the team name as it appears in the schedule data.
+      // Reds 7 is TBC, so it is intentionally left without an entry.
+      const COACHES = {
+        "Reds 1": "Izak Jones",
+        "Reds 2": "Sam Pilatti",
+        "Reds 3": "AJ Lee",
+        "Reds 4": "Benjamin O'Keeffe",
+        "Reds 5": "Blake Bayliss",
+        "Reds 6": "Bevan Cole",
+        "Reds 8": "Nicole Leighton",
+        "Reds 9": "Michelle Hilbrands",
+        "Reds 10": "Blair Oliver",
+        "Reds 11": "Gabrielle Ho",
+        "Reds 12": "Nicole Ostermeyer",
+        "Reds 13": "Denzil Fernandes",
+      };
+      const coachFor = (team) => COACHES[team] || "";
+
       let all = [];
       let teams = [];
       let selectedTeams = new Set();
@@ -213,7 +232,7 @@
               <tr>
                 <td class="team">${esc(r.team)}</td>
                 <td>${esc(r.division)}</td>
-                <td class="blank"></td>
+                <td>${esc(coachFor(r.team))}</td>
                 <td>${esc(r.venue)}</td>
                 <td class="court">${esc(r.court)}</td>
                 <td>${esc(r.opponent)}</td>
@@ -253,7 +272,7 @@
         const row = (vals) => vals.map(csvCell).join(",");
         const lines = [row(cols)];
         for (const r of exportRows) {
-          lines.push(row([r.date, r.team, r.division, "", r.venue, r.court, r.opponent, r.time, r.duty]));
+          lines.push(row([r.date, r.team, r.division, coachFor(r.team), r.venue, r.court, r.opponent, r.time, r.duty]));
         }
         const csv = "﻿" + lines.join("\r\n");
 

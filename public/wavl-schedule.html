@@ -83,6 +83,34 @@
 
     <script>
       const REDS = /\breds\b/i;
+
+      // Head coach per team, keyed by the team name as it appears in the schedule data.
+      const COACHES = {
+        "SLM Reds": "Jon Uriarte",
+        "SLW Reds": "Greg Hunt",
+        "SLRM Reds": "Jason Laverdure",
+        "SLRW Reds": "Joseph Anderson-Mackay",
+        "D1M Reds": "Cameron Edwards",
+        "D1M Reds Junior": "Jordan Fancote",
+        "D1W Reds": "William Dodge",
+        "D1RW Reds Junior": "Bronson Dunkley-Cooper",
+        "D2M Reds": "Zak Dempsey",
+        "D2M Reds Black": "Kaan Ozdemir",
+        "D2M Reds White": "Roselyn Hopkins",
+        "D2M Reds Junior": "Perth Otero",
+        "D2M Reds Junior Black": "Logan Vanderweide",
+        "D2W Reds": "Sho Aarons",
+        "D3M Reds": "Jason Gonsalves",
+        "D3W Reds": "Ryan Gonsalves",
+        "D3W Reds Black": "Minori Yonehara",
+        "D4M Reds": "Dwayne Chumaneo",
+        "D4M Reds Junior": "Har San",
+        "D5M Reds": "Har San",
+        "D6M Reds": "Chrissian Guanzon",
+        "D6M Reds White": "Chrissian Guanzon",
+      };
+      const coachFor = (team) => COACHES[team] || "";
+
       let all = [];
       let teams = [];
       let selectedTeams = new Set();
@@ -211,7 +239,7 @@
                   `
               <tr>
                 <td class="team">${esc(r.team)}</td>
-                <td class="blank"></td>
+                <td>${esc(coachFor(r.team))}</td>
                 <td>${esc(r.venue)}</td>
                 <td>${esc(r.opponent)}</td>
                 <td class="time">${esc(r.time)}</td>
@@ -253,7 +281,7 @@
         const row = (vals) => vals.map(csvCell).join(",");
         const lines = [row(cols)];
         for (const r of exportRows) {
-          lines.push(row([r.date, r.team, "", r.venue, r.opponent, r.time, r.court, r.duty, "", ""]));
+          lines.push(row([r.date, r.team, coachFor(r.team), r.venue, r.opponent, r.time, r.court, r.duty, "", ""]));
         }
         const csv = "﻿" + lines.join("\r\n");
 
