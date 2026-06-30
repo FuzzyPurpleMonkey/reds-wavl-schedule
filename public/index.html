@@ -167,6 +167,7 @@
         <span class="count" id="count"></span>
         <button class="btn" id="nextweek">Next week</button>
         <button class="btn" id="unplayed">Unplayed only</button>
+        <button class="btn" id="hidework">Hide work</button>
         <button class="btn" id="export">⬇ Export to CSV</button>
         <button class="btn" id="refresh">Refresh</button>
       </div>
@@ -182,6 +183,7 @@
       let selectedTeams = new Set(); // empty = all Reds teams
       let unplayedOnly = true; // show only games not yet played (default on)
       let nextWeekOnly = false; // show only games in the next 7 days
+      let hideWork = true; // hide rows where the focus team is only on work duty (default on)
 
       const REDS = /\breds\b/i;
 
@@ -313,8 +315,12 @@
           }
           cur.items.push(m);
         }
+        // When "Hide work" is on, the Work column is dropped entirely.
+        const cols = hideWork ? 5 : 6;
         const head =
-          "<thead><tr><th>Time</th><th>Venue</th><th>Home</th><th>Away</th><th>Work</th><th>Score</th></tr></thead>";
+          "<thead><tr><th>Time</th><th>Venue</th><th>Home</th><th>Away</th>" +
+          (hideWork ? "" : "<th>Work</th>") +
+          "<th>Score</th></tr></thead>";
         content.innerHTML = groups
           .map((g) => {
             // Within a day, group by venue (then time), with a spacer between venues.
@@ -326,7 +332,7 @@
               .map((m) => {
                 const sep =
                   prevVenue !== null && m.venue !== prevVenue
-                    ? '<tr class="spacer"><td colspan="6"></td></tr>'
+                    ? `<tr class="spacer"><td colspan="${cols}"></td></tr>`
                     : "";
                 prevVenue = m.venue;
                 const venueHtml = m.venueAddress
@@ -340,7 +346,7 @@
               <td data-label="Venue">${venueHtml}${m.court ? " (crt " + esc(m.court) + ")" : ""}</td>
               <td data-label="Home">${cell(m.home)}</td>
               <td data-label="Away">${cell(m.away)}</td>
-              <td data-label="Work" class="work">${cell(m.work)}</td>
+              ${hideWork ? "" : `<td data-label="Work" class="work">${cell(m.work)}</td>`}
               <td data-label="Score" class="score">${renderScoreCell(m)}</td>
             </tr>`
                 );
@@ -358,6 +364,13 @@
         if (selectedTeams.size > 0) {
           rows = rows.filter(
             (m) => selectedTeams.has(m.home) || selectedTeams.has(m.away) || selectedTeams.has(m.work)
+          );
+        }
+        if (hideWork) {
+          rows = rows.filter((m) =>
+            selectedTeams.size > 0
+              ? selectedTeams.has(m.home) || selectedTeams.has(m.away)
+              : REDS.test(m.home) || REDS.test(m.away)
           );
         }
         if (unplayedOnly) {
@@ -394,6 +407,7 @@
         const p = new URLSearchParams();
         if (selectedTeams.size) p.set("teams", [...selectedTeams].join(","));
         if (!unplayedOnly) p.set("unplayed", "0"); // default is on; only record when off
+        if (!hideWork) p.set("hidework", "0"); // default is on; only record when off
         if (nextWeekOnly) p.set("next", "1");
         const q = document.getElementById("search").value.trim();
         if (q) p.set("q", q);
@@ -407,6 +421,7 @@
         const t = p.get("teams");
         selectedTeams = new Set(t ? t.split(",").filter(Boolean) : []);
         if (p.has("unplayed")) unplayedOnly = p.get("unplayed") !== "0";
+        if (p.has("hidework")) hideWork = p.get("hidework") !== "0";
         nextWeekOnly = p.get("next") === "1";
         document.getElementById("search").value = p.get("q") || "";
       }
@@ -479,6 +494,7 @@
       readStateFromURL();
       document.getElementById("unplayed").classList.toggle("active", unplayedOnly);
       document.getElementById("nextweek").classList.toggle("active", nextWeekOnly);
+      document.getElementById("hidework").classList.toggle("active", hideWork);
       document.getElementById("unplayed").addEventListener("click", (e) => {
         unplayedOnly = !unplayedOnly;
         e.currentTarget.classList.toggle("active", unplayedOnly);
@@ -487,6 +503,11 @@
       document.getElementById("nextweek").addEventListener("click", (e) => {
         nextWeekOnly = !nextWeekOnly;
         e.currentTarget.classList.toggle("active", nextWeekOnly);
+        applyFilter();
+      });
+      document.getElementById("hidework").addEventListener("click", (e) => {
+        hideWork = !hideWork;
+        e.currentTarget.classList.toggle("active", hideWork);
         applyFilter();
       });
       document.getElementById("export").addEventListener("click", exportCSV);
