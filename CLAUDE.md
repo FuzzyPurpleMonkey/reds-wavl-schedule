@@ -49,7 +49,9 @@ e.g. `fetch("/api/matches?league=wavjl")`.
 ### Pages
 
 - `public/index.html` — full Reds match list with filters, scores/results, CSV
-  export, and shareable URL state. Hardcoded to WAVL (`fetch("/api/matches")`).
+  export, and shareable URL state. Fetches both leagues (`wavl` + `wavjl`) and
+  merges them into one table grouped by date then venue; the team filter is
+  split into per-league chip groups.
 - `public/wavl-schedule.html`, `public/wavjl-schedule.html` — duty & bag roster
   views grouped by date, one row per Reds team that is playing, annotated with
   that team's "work" (duty) assignment. Served at `/wavl-schedule` and
