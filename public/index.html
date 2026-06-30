@@ -36,6 +36,7 @@
       }
       header h1 { margin: 0; font-size: 1.4rem; }
       header p { margin: 4px 0 0; opacity: 0.85; font-size: 0.85rem; }
+      header p a { color: inherit; text-decoration: underline; }
       header .nav { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
       header .nav a { color: #fff; text-decoration: none; font-size: 0.85rem; border: 1px solid rgba(255,255,255,0.5); padding: 8px 12px; border-radius: 8px; white-space: nowrap; }
       header .nav a:hover { background: rgba(255,255,255,0.15); }
@@ -118,6 +119,8 @@
       th { background: #fafbfc; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
       tr:last-child td { border-bottom: none; }
       tr.spacer td { height: 12px; padding: 0; background: var(--bg); border: none; }
+      .venue-link { color: inherit; text-decoration: underline; text-decoration-color: var(--line); }
+      .venue-link:hover { text-decoration-color: var(--red); }
       .reds { font-weight: 600; color: var(--red); }
       .won { font-weight: 700; }
       .score { white-space: nowrap; font-variant-numeric: tabular-nums; }
@@ -149,7 +152,9 @@
       <img class="logo" src="perth_reds_logo.png" alt="Perth Reds Volleyball" />
       <div>
         <h1>Perth Reds - Match Schedule 2026</h1>
-        <p>All Reds teams, live from the WAVL &amp; WAVJL schedules.</p>
+        <p>All Reds teams, live from the
+          <a href="https://volleyball.exposureevents.com/259835/wavl/documents/schedule?layout=datetime" target="_blank" rel="noopener">WAVL</a> &amp;
+          <a href="https://volleyball.exposureevents.com/267727/wavjl-2026/documents/schedule?layout=datetime" target="_blank" rel="noopener">WAVJL</a> schedules.</p>
       </div>
       <div class="nav">
         <a href="/wavl-schedule">WAVL roster</a>
@@ -183,6 +188,12 @@
       function esc(s) {
         return (s || "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
       }
+
+      // Google Maps search link for a venue; include the name so partial
+      // addresses (e.g. "99 Loftus St") still geocode to the right place.
+      const mapsUrl = (m) =>
+        "https://www.google.com/maps/search/?api=1&query=" +
+        encodeURIComponent(m.venue + (m.venueAddress ? ", " + m.venueAddress : ""));
 
       // "9:30 AM" -> minutes since midnight, for ordering games within a day.
       function timeMin(t) {
@@ -318,12 +329,15 @@
                     ? '<tr class="spacer"><td colspan="6"></td></tr>'
                     : "";
                 prevVenue = m.venue;
+                const venueHtml = m.venueAddress
+                  ? `<a class="venue-link" href="${esc(mapsUrl(m))}" target="_blank" rel="noopener">${esc(m.venue)}</a>`
+                  : esc(m.venue);
                 return (
                   sep +
                   `
             <tr>
               <td data-label="Time" class="when">${esc(m.time)}</td>
-              <td data-label="Venue">${esc(m.venue)}${m.court ? " (crt " + esc(m.court) + ")" : ""}</td>
+              <td data-label="Venue">${venueHtml}${m.court ? " (crt " + esc(m.court) + ")" : ""}</td>
               <td data-label="Home">${cell(m.home)}</td>
               <td data-label="Away">${cell(m.away)}</td>
               <td data-label="Work" class="work">${cell(m.work)}</td>

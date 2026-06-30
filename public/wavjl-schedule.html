@@ -29,6 +29,7 @@
       header img.logo { height: 64px; width: auto; background: #fff; border-radius: 50%; padding: 4px; flex-shrink: 0; }
       header h1 { margin: 0; font-size: 1.4rem; }
       header p { margin: 4px 0 0; opacity: 0.85; font-size: 0.85rem; }
+      header p a { color: inherit; text-decoration: underline; }
       header .nav { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
       header .nav a { color: #fff; text-decoration: none; font-size: 0.85rem; border: 1px solid rgba(255,255,255,0.5); padding: 8px 12px; border-radius: 8px; }
       header .nav a:hover { background: rgba(255,255,255,0.15); }
@@ -48,6 +49,8 @@
       td.team { font-weight: 600; color: var(--red); white-space: nowrap; }
       td.time, td.court { white-space: nowrap; }
       td.duty { white-space: nowrap; }
+      .venue-link { color: inherit; text-decoration: underline; text-decoration-color: var(--line); }
+      .venue-link:hover { text-decoration-color: var(--red); }
       .blank { min-width: 120px; }
       tr.spacer td { height: 12px; padding: 0; background: var(--bg); border-left: 0; border-right: 0; }
       .state { padding: 40px; text-align: center; color: var(--muted); }
@@ -65,7 +68,8 @@
       <img class="logo" src="perth_reds_logo.png" alt="Perth Reds Volleyball" />
       <div>
         <h1>Perth Reds - WAVJL Schedule 2026</h1>
-        <p>Junior team duty &amp; bag roster, grouped by date.</p>
+        <p>Junior team duty &amp; bag roster, grouped by date, from the
+          <a href="https://volleyball.exposureevents.com/267727/wavjl-2026/documents/schedule?layout=datetime" target="_blank" rel="noopener">WAVJL</a> schedule.</p>
       </div>
       <div class="nav">
         <a href="/">&larr; Match schedule</a>
@@ -112,6 +116,12 @@
         return (s || "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
       }
 
+      // Google Maps search link for a venue; include the name so partial
+      // addresses still geocode to the right place.
+      const mapsUrl = (r) =>
+        "https://www.google.com/maps/search/?api=1&query=" +
+        encodeURIComponent(r.venue + (r.venueAddress ? ", " + r.venueAddress : ""));
+
       function timeMin(t) {
         const m = (t || "").match(/(\d+):(\d+)\s*(AM|PM)/i);
         if (!m) return 0;
@@ -147,6 +157,7 @@
               division: m.division,
               opponent,
               venue: m.venue,
+              venueAddress: m.venueAddress,
               time: m.time,
               court: m.court,
               duty: d ? d.join(", ") : "",
@@ -226,6 +237,9 @@
                     ? '<tr class="spacer"><td colspan="8"></td></tr>'
                     : "";
                 prevVenue = r.venue;
+                const venueHtml = r.venueAddress
+                  ? `<a class="venue-link" href="${esc(mapsUrl(r))}" target="_blank" rel="noopener">${esc(r.venue)}</a>`
+                  : esc(r.venue);
                 return (
                   sep +
                   `
@@ -233,7 +247,7 @@
                 <td class="team">${esc(r.team)}</td>
                 <td>${esc(r.division)}</td>
                 <td>${esc(coachFor(r.team))}</td>
-                <td>${esc(r.venue)}</td>
+                <td>${venueHtml}</td>
                 <td class="court">${esc(r.court)}</td>
                 <td>${esc(r.opponent)}</td>
                 <td class="time">${esc(r.time)}</td>

@@ -10,6 +10,12 @@ const SOURCES = {
   wavjl: "https://volleyball.exposureevents.com/267727/wavjl-2026/documents/schedule?layout=datetime",
 };
 
+// Companion venue pages (name + street address), keyed by the same league slugs.
+const VENUE_SOURCES = {
+  wavl: "https://volleyball.exposureevents.com/259835/wavl/documents/venues",
+  wavjl: "https://volleyball.exposureevents.com/267727/wavjl-2026/documents/venues",
+};
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -59,7 +65,24 @@ function toISODate(raw) {
   return `${d.getFullYear()}-${mm}-${dd}`;
 }
 
-function parseSchedule(html) {
+// Parse each venue from a "documents/venues" page into { abbrLower: address }.
+function parseVenues(html) {
+  const $ = cheerio.load(html);
+  const byAbbr = {};
+  $("td.division-venue").each((_, td) => {
+    const $td = $(td);
+    const abbr = clean($td.find("i").first().text()).replace(/^\(|\)$/g, "");
+    if (!abbr) return;
+    // The 3rd <div> is the address; prefer its <span> (fuller) when present.
+    const $addr = $td.children("div").eq(2);
+    const $span = $addr.find("span").first();
+    const address = clean(($span.length ? $span.text() : $addr.text()).replace(/^[,\s]+/, ""));
+    byAbbr[abbr.toLowerCase()] = address;
+  });
+  return byAbbr;
+}
+
+function parseSchedule(html, venueAddrByAbbr = {}) {
   const $ = cheerio.load(html);
 
   // Build a map of venue id -> full venue name from the legend at the bottom.
@@ -86,6 +109,7 @@ function parseSchedule(html) {
       const venueId = venueHref.replace(/^#/, "");
       // Legend names look like "Aquin - Aquinas College"; drop the abbreviation prefix.
       const venueFull = (venueNames[venueId] || venueAbbr).replace(/^.*?\s-\s/, "");
+      const venueAddress = venueAddrByAbbr[venueAbbr.toLowerCase()] || "";
 
       const court = clean($(cells[2]).text());
       const division = clean($(cells[3]).text());
@@ -136,6 +160,7 @@ function parseSchedule(html) {
         dateISO,
         time,
         venue: venueFull,
+        venueAddress,
         court,
         division,
         home,
@@ -154,6 +179,16 @@ function parseSchedule(html) {
   return matches;
 }
 
+async function fetchText(url) {
+  const res = await fetch(url, {
+    headers: { "User-Agent": "Mozilla/5.0 (reds-wavl-schedule)" },
+  });
+  if (!res.ok) {
+    throw new Error(`Source returned HTTP ${res.status}`);
+  }
+  return res.text();
+}
+
 async function getMatches(league) {
   const url = SOURCES[league];
   if (!url) throw new Error(`Unknown league: ${league}`);
@@ -161,14 +196,12 @@ async function getMatches(league) {
   if (c && Date.now() - c.at < CACHE_MS) {
     return c.data;
   }
-  const res = await fetch(url, {
-    headers: { "User-Agent": "Mozilla/5.0 (reds-wavl-schedule)" },
-  });
-  if (!res.ok) {
-    throw new Error(`Source returned HTTP ${res.status}`);
-  }
-  const html = await res.text();
-  const data = parseSchedule(html);
+  // Venue addresses are best-effort: a failure there must not break the schedule.
+  const [html, venuesHtml] = await Promise.all([
+    fetchText(url),
+    fetchText(VENUE_SOURCES[league]).catch(() => ""),
+  ]);
+  const data = parseSchedule(html, venuesHtml ? parseVenues(venuesHtml) : {});
   cache[league] = { at: Date.now(), data };
   return data;
 }
