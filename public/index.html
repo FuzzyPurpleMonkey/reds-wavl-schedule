@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Perth Reds - WAVL Match Schedule 2026</title>
+    <title>Perth Reds - Match Schedule 2026</title>
     <style>
       :root {
         --red: #c8102e;
@@ -36,7 +36,7 @@
       }
       header h1 { margin: 0; font-size: 1.4rem; }
       header p { margin: 4px 0 0; opacity: 0.85; font-size: 0.85rem; }
-      header .nav { margin-left: auto; }
+      header .nav { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
       header .nav a { color: #fff; text-decoration: none; font-size: 0.85rem; border: 1px solid rgba(255,255,255,0.5); padding: 8px 12px; border-radius: 8px; white-space: nowrap; }
       header .nav a:hover { background: rgba(255,255,255,0.15); }
       .wrap { max-width: 1200px; margin: 0 auto; padding: 20px 16px 60px; }
@@ -90,11 +90,12 @@
         color: #fff;
         font-weight: 600;
       }
-      table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+      h2.day { margin: 26px 0 8px; font-size: 1.05rem; color: var(--red); border-bottom: 2px solid var(--red); padding-bottom: 4px; }
+      table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.06); margin-bottom: 8px; }
       th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); font-size: 0.9rem; vertical-align: top; }
       th { background: #fafbfc; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
       tr:last-child td { border-bottom: none; }
-      tbody tr.day-alt td { background: #f4f6f8; }
+      tr.spacer td { height: 12px; padding: 0; background: var(--bg); border: none; }
       .reds { font-weight: 600; color: var(--red); }
       .won { font-weight: 700; }
       .score { white-space: nowrap; font-variant-numeric: tabular-nums; }
@@ -125,10 +126,13 @@
     <header>
       <img class="logo" src="perth_reds_logo.png" alt="Perth Reds Volleyball" />
       <div>
-        <h1>Perth Reds - WAVL Match Schedule 2026</h1>
-        <p>All Reds teams, live from the WAVL schedule.</p>
+        <h1>Perth Reds - Match Schedule 2026</h1>
+        <p>All Reds teams, live from the WAVL &amp; WAVJL schedules.</p>
       </div>
-      <div class="nav"><a href="/wavl-schedule">Duty &amp; bag roster &rarr;</a></div>
+      <div class="nav">
+        <a href="/wavl-schedule">WAVL roster</a>
+        <a href="/wavjl-schedule">WAVJL roster</a>
+      </div>
     </header>
     <div class="wrap">
       <div class="controls">
@@ -155,6 +159,15 @@
 
       function esc(s) {
         return (s || "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+      }
+
+      // "9:30 AM" -> minutes since midnight, for ordering games within a day.
+      function timeMin(t) {
+        const m = (t || "").match(/(\d+):(\d+)\s*(AM|PM)/i);
+        if (!m) return 0;
+        let h = +m[1] % 12;
+        if (/pm/i.test(m[3])) h += 12;
+        return h * 60 + +m[2];
       }
 
       // Render a team cell: red if it's a Reds team in focus.
@@ -223,33 +236,49 @@
           content.innerHTML = '<div class="state">No matches found.</div>';
           return;
         }
-        let prevDate = null;
-        let alt = false;
-        const body = rows
-          .map((m) => {
-            // Flip the shade each time the date changes, so a day's games share a band.
-            if (m.date !== prevDate) {
-              alt = !alt;
-              prevDate = m.date;
-            }
-            return `
-          <tr class="${alt ? "day-alt" : ""}">
-            <td data-label="When" class="when">${esc(m.date)} <span class="time">${esc(m.time)}</span></td>
-            <td data-label="Venue">${esc(m.venue)}${m.court ? " (crt " + esc(m.court) + ")" : ""}</td>
-            <td data-label="Home">${cell(m.home)}</td>
-            <td data-label="Away">${cell(m.away)}</td>
-            <td data-label="Work" class="work">${cell(m.work)}</td>
-            <td data-label="Score" class="score">${renderScoreCell(m)}</td>
-          </tr>`;
+        // Group into one table per date (rows arrive already sorted by date then time).
+        const groups = [];
+        let cur = null;
+        for (const m of rows) {
+          if (!cur || cur.date !== m.date) {
+            cur = { date: m.date, items: [] };
+            groups.push(cur);
+          }
+          cur.items.push(m);
+        }
+        const head =
+          "<thead><tr><th>Time</th><th>Venue</th><th>Home</th><th>Away</th><th>Work</th><th>Score</th></tr></thead>";
+        content.innerHTML = groups
+          .map((g) => {
+            // Within a day, group by venue (then time), with a spacer between venues.
+            g.items.sort(
+              (a, b) => (a.venue || "").localeCompare(b.venue || "") || timeMin(a.time) - timeMin(b.time)
+            );
+            let prevVenue = null;
+            const body = g.items
+              .map((m) => {
+                const sep =
+                  prevVenue !== null && m.venue !== prevVenue
+                    ? '<tr class="spacer"><td colspan="6"></td></tr>'
+                    : "";
+                prevVenue = m.venue;
+                return (
+                  sep +
+                  `
+            <tr>
+              <td data-label="Time" class="when">${esc(m.time)}</td>
+              <td data-label="Venue">${esc(m.venue)}${m.court ? " (crt " + esc(m.court) + ")" : ""}</td>
+              <td data-label="Home">${cell(m.home)}</td>
+              <td data-label="Away">${cell(m.away)}</td>
+              <td data-label="Work" class="work">${cell(m.work)}</td>
+              <td data-label="Score" class="score">${renderScoreCell(m)}</td>
+            </tr>`
+                );
+              })
+              .join("");
+            return `<h2 class="day">${esc(g.date)}</h2><table>${head}<tbody>${body}</tbody></table>`;
           })
           .join("");
-        content.innerHTML = `
-          <table>
-            <thead>
-              <tr><th>Date / Time</th><th>Venue</th><th>Home</th><th>Away</th><th>Work</th><th>Score</th></tr>
-            </thead>
-            <tbody>${body}</tbody>
-          </table>`;
       }
 
       function applyFilter() {
@@ -342,7 +371,7 @@
           .replace(/\s+/g, "-")
           .toLowerCase();
         a.href = url;
-        a.download = `reds-wavl-schedule-${slug}.csv`;
+        a.download = `reds-schedule-${slug}.csv`;
         a.click();
         URL.revokeObjectURL(url);
       }
@@ -351,11 +380,19 @@
         document.getElementById("content").innerHTML =
           '<div class="state"><img src="perth_reds_bounce.gif" alt="Loading" />Loading matches…</div>';
         try {
-          const res = await fetch("/api/matches");
-          const data = await res.json();
-          if (!res.ok) throw new Error(data.error || "Failed to load");
-          all = data.matches;
-          teams = data.teams || [];
+          // Pull both leagues and merge them into one chronological table.
+          const get = (lg) =>
+            fetch("/api/matches?league=" + lg).then(async (r) => {
+              const d = await r.json();
+              if (!r.ok) throw new Error(d.error || "Failed to load " + lg.toUpperCase());
+              return d;
+            });
+          const [wavl, wavjl] = await Promise.all([get("wavl"), get("wavjl")]);
+          all = [...wavl.matches, ...wavjl.matches].sort(
+            (a, b) =>
+              (a.dateISO || "").localeCompare(b.dateISO || "") || timeMin(a.time) - timeMin(b.time)
+          );
+          teams = [...(wavl.teams || []), ...(wavjl.teams || [])];
           renderFilters();
           applyFilter();
         } catch (e) {
