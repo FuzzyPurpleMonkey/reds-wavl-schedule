@@ -114,7 +114,7 @@
         font-weight: 600;
       }
       h2.day { margin: 26px 0 8px; font-size: 1.05rem; color: var(--red); border-bottom: 2px solid var(--red); padding-bottom: 4px; }
-      table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.06); margin-bottom: 8px; }
+      table { width: 100%; table-layout: fixed; border-collapse: collapse; background: #fff; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.06); margin-bottom: 8px; }
       th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); font-size: 0.9rem; vertical-align: top; }
       th { background: #fafbfc; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
       tr:last-child td { border-bottom: none; }
@@ -123,7 +123,10 @@
       .venue-link:hover { text-decoration-color: var(--red); }
       .reds { font-weight: 600; color: var(--red); }
       .won { font-weight: 700; }
-      .score { white-space: nowrap; font-variant-numeric: tabular-nums; }
+      /* Allow long scores to wrap to the next line (the column is fixed-width),
+         but keep each "25-22" pair from breaking across lines. */
+      .score { font-variant-numeric: tabular-nums; }
+      .score .setpair { white-space: nowrap; }
       .score .setwin { font-weight: 700; }
       .score .muted { color: var(--muted); }
       .result { display: inline-block; min-width: 22px; text-align: center; padding: 1px 6px; border-radius: 5px; font-size: 0.72rem; font-weight: 700; margin-right: 8px; }
@@ -232,12 +235,12 @@
           .split(",")
           .map((set) => {
             const m = set.trim().match(/^(\d+)-(\d+)$/);
-            if (!m) return esc(set.trim());
+            if (!m) return `<span class="setpair">${esc(set.trim())}</span>`;
             const a = +m[1];
             const b = +m[2];
             const A = a > b ? `<span class="setwin">${a}</span>` : a;
             const B = b > a ? `<span class="setwin">${b}</span>` : b;
-            return `${A}-${B}`;
+            return `<span class="setpair">${A}-${B}</span>`;
           })
           .join(", ");
       }
@@ -317,6 +320,10 @@
         }
         // When "Hide work" is on, the Work column is dropped entirely.
         const cols = hideWork ? 5 : 6;
+        // Shared widths so every date's table lines up. Drop Work's slice when hidden.
+        const colgroup = hideWork
+          ? `<colgroup><col style="width:9%"><col style="width:28%"><col style="width:19%"><col style="width:19%"><col style="width:25%"></colgroup>`
+          : `<colgroup><col style="width:8%"><col style="width:22%"><col style="width:16%"><col style="width:16%"><col style="width:15%"><col style="width:23%"></colgroup>`;
         const head =
           "<thead><tr><th>Time</th><th>Venue</th><th>Home</th><th>Away</th>" +
           (hideWork ? "" : "<th>Work</th>") +
@@ -352,7 +359,7 @@
                 );
               })
               .join("");
-            return `<h2 class="day">${esc(g.date)}</h2><table>${head}<tbody>${body}</tbody></table>`;
+            return `<h2 class="day">${esc(g.date)}</h2><table>${colgroup}${head}<tbody>${body}</tbody></table>`;
           })
           .join("");
       }
