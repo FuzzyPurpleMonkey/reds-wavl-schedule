@@ -69,10 +69,32 @@
       .btn.active { background: var(--red); border-color: var(--red); color: #fff; font-weight: 600; }
       .filters {
         display: flex;
-        gap: 8px;
-        flex-wrap: wrap;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
         margin-bottom: 18px;
       }
+      .filter-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+      .filter-row .sep { color: var(--line); }
+      /* League rows: keep "All …" + | on the left, chips flow in their own column so
+         wrapped lines line up under the first chip (just after the |). */
+      .league-row { flex-wrap: nowrap; align-items: flex-start; }
+      .chip-group { display: flex; gap: 8px; flex-wrap: wrap; flex: 1; min-width: 0; }
+      .league-label {
+        min-width: 58px;
+        padding: 7px 10px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fff;
+        cursor: pointer;
+        font-size: 0.72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--muted);
+      }
+      .league-label:hover { border-color: var(--red); }
+      .league-label.active { background: var(--red); border-color: var(--red); color: #fff; }
       .chip {
         padding: 7px 12px;
         border: 1px solid var(--line);
@@ -150,6 +172,7 @@
     <script>
       let all = [];
       let teams = [];
+      let teamGroups = []; // [{ league: "WAVL", teams: [...] }, ...]
       let currentRows = []; // rows currently shown (after team + search filters)
       let selectedTeams = new Set(); // empty = all Reds teams
       let unplayedOnly = true; // show only games not yet played (default on)
@@ -206,26 +229,59 @@
           .join(", ");
       }
 
+      // Drop the redundant "Reds" from a team name for display, e.g.
+      // "D2M Reds Black" -> "D2M Black", "Reds 1" -> "1".
+      const teamLabel = (n) => n.replace(/\bReds\b/g, "").replace(/\s+/g, " ").trim() || n;
+
       function renderFilters() {
         const el = document.getElementById("filters");
-        const isActive = (value) =>
-          value === "all" ? selectedTeams.size === 0 : selectedTeams.has(value);
-        const chip = (label, value) =>
-          `<button class="chip ${isActive(value) ? "active" : ""}" data-team="${esc(value)}">${esc(label)}</button>`;
-        el.innerHTML =
-          chip("All Reds teams", "all") + teams.map((t) => chip(t, t)).join("");
-        el.querySelectorAll(".chip").forEach((b) =>
+        const allActive = selectedTeams.size === 0;
+        const rows = [
+          `<div class="filter-row"><button class="league-label ${allActive ? "active" : ""}" data-all="1">All teams</button></div>`,
+        ];
+        for (const g of teamGroups) {
+          if (!g.teams.length) continue;
+          const groupActive = g.teams.every((t) => selectedTeams.has(t));
+          const chips = g.teams
+            .map(
+              (t) =>
+                `<button class="chip ${selectedTeams.has(t) ? "active" : ""}" data-team="${esc(t)}">${esc(teamLabel(t))}</button>`
+            )
+            .join("");
+          rows.push(
+            `<div class="filter-row league-row">` +
+              `<button class="league-label ${groupActive ? "active" : ""}" data-league="${esc(g.league)}">All ${esc(g.league)}</button>` +
+              `<span class="sep">|</span>` +
+              `<div class="chip-group">${chips}</div>` +
+            `</div>`
+          );
+        }
+        el.innerHTML = rows.join("");
+
+        const refresh = () => {
+          renderFilters();
+          applyFilter();
+        };
+        el.querySelector("[data-all]").addEventListener("click", () => {
+          selectedTeams.clear();
+          refresh();
+        });
+        el.querySelectorAll(".chip[data-team]").forEach((b) =>
           b.addEventListener("click", () => {
             const v = b.dataset.team;
-            if (v === "all") {
-              selectedTeams.clear();
-            } else if (selectedTeams.has(v)) {
-              selectedTeams.delete(v); // toggle off
-            } else {
-              selectedTeams.add(v); // toggle on (multiple allowed)
-            }
-            renderFilters();
-            applyFilter();
+            if (selectedTeams.has(v)) selectedTeams.delete(v);
+            else selectedTeams.add(v);
+            refresh();
+          })
+        );
+        el.querySelectorAll(".league-label").forEach((b) =>
+          b.addEventListener("click", () => {
+            const g = teamGroups.find((x) => x.league === b.dataset.league);
+            if (!g) return;
+            const allSelected = g.teams.every((t) => selectedTeams.has(t));
+            // Toggle the whole league: clear it if fully selected, else select all.
+            g.teams.forEach((t) => (allSelected ? selectedTeams.delete(t) : selectedTeams.add(t)));
+            refresh();
           })
         );
       }
@@ -393,6 +449,10 @@
               (a.dateISO || "").localeCompare(b.dateISO || "") || timeMin(a.time) - timeMin(b.time)
           );
           teams = [...(wavl.teams || []), ...(wavjl.teams || [])];
+          teamGroups = [
+            { league: "WAVL", teams: wavl.teams || [] },
+            { league: "WAVJL", teams: wavjl.teams || [] },
+          ];
           renderFilters();
           applyFilter();
         } catch (e) {
