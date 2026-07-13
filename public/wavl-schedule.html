@@ -119,6 +119,26 @@
       // "SLRM Fremantle" -> "Fremantle", "D1W Marist" -> "Marist".
       const stripDivision = (name) => (name || "").replace(/^(SL|D\d+)R?[MW]\s+/i, "");
 
+      // Reformat a Reds team name for display, e.g.
+      // "SLW Reds" -> "RVC SL WOMEN", "SLRM Reds" -> "RVC SLR MEN",
+      // "D2M Reds Black" -> "RVC D2 MEN (BLACK)". Junior teams drop the
+      // "Junior" tag and use the "RJVC" club prefix, e.g.
+      // "D2M Reds Junior Black" -> "RJVC D2 MEN (BLACK)".
+      // Leaves non-matching names as-is.
+      const SEX = { M: "MEN", W: "WOMEN" };
+      function formatTeam(team) {
+        const m = (team || "").match(/^(SL|D\d+)(R)?([MW])\s+Reds\b(.*)$/i);
+        if (!m) return team || "";
+        const division = (m[1] + (m[2] || "")).toUpperCase();
+        const sex = SEX[m[3].toUpperCase()];
+        const tokens = m[4].trim().toUpperCase().split(/\s+/).filter(Boolean);
+        const junior = tokens.includes("JUNIOR");
+        const colours = tokens.filter((t) => t !== "JUNIOR");
+        const club = junior ? "RJVC" : "RVC";
+        const suffix = colours.length ? ` (${colours.join(" ")})` : "";
+        return `${club} ${division} ${sex}${suffix}`;
+      }
+
       let all = [];
       let teams = [];
       let selectedTeams = new Set();
@@ -184,7 +204,7 @@
         const isActive = (v) => (v === "all" ? selectedTeams.size === 0 : selectedTeams.has(v));
         const chip = (label, value) =>
           `<button class="chip ${isActive(value) ? "active" : ""}" data-team="${esc(value)}">${esc(label)}</button>`;
-        el.innerHTML = chip("All teams", "all") + teams.map((t) => chip(t, t)).join("");
+        el.innerHTML = chip("All teams", "all") + teams.map((t) => chip(formatTeam(t), t)).join("");
         el.querySelectorAll(".chip").forEach((b) =>
           b.addEventListener("click", () => {
             const v = b.dataset.team;
@@ -256,7 +276,7 @@
                   sep +
                   `
               <tr>
-                <td class="team">${esc(r.team)}</td>
+                <td class="team">${esc(formatTeam(r.team))}</td>
                 <td>${esc(coachFor(r.team))}</td>
                 <td>${venueHtml}</td>
                 <td>${esc(stripDivision(r.opponent))}</td>
@@ -298,8 +318,14 @@
         };
         const row = (vals) => vals.map(csvCell).join(",");
         const lines = [row(cols)];
+        // Blank separator row between each day, and between each venue within a day.
+        let prevDate = null;
+        let prevVenue = null;
         for (const r of exportRows) {
-          lines.push(row([r.date, r.team, coachFor(r.team), r.venue, stripDivision(r.opponent), r.time, r.court, r.duty, "", ""]));
+          if (prevDate !== null && (r.dateISO !== prevDate || r.venue !== prevVenue)) lines.push("");
+          prevDate = r.dateISO;
+          prevVenue = r.venue;
+          lines.push(row([r.date, formatTeam(r.team), coachFor(r.team), r.venue, stripDivision(r.opponent), r.time, r.court, r.duty, "", ""]));
         }
         const csv = "﻿" + lines.join("\r\n");
 
