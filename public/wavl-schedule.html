@@ -80,11 +80,13 @@
       <div class="controls">
         <button class="btn" id="nextweek">Next week only</button>
         <button class="btn" id="export">⬇ Export to CSV</button>
+        <button class="btn" id="exportxlsx">⬇ Export to Excel</button>
       </div>
       <div class="filters" id="filters"></div>
       <div id="content"><div class="state"><img src="perth_reds_bounce.gif" alt="Loading" />Loading schedule…</div></div>
     </div>
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
     <script>
       const REDS = /\breds\b/i;
 
@@ -309,45 +311,135 @@
         }
       }
 
+      const EXPORT_COLS = ["Date", "Team", "Coach", "Venue", "Opponent", "Time", "Court", "Duty", "Ball Bag #", "Bag Collection", "Bag Return"];
+
+      // Cells for one export row, in EXPORT_COLS order. Trailing blanks are
+      // fill-in-by-hand columns (Ball Bag #, Bag Collection, Bag Return).
+      const exportCells = (r) =>
+        [r.date, formatTeam(r.team), coachFor(r.team), r.venue, stripDivision(r.opponent), r.time, r.court, r.duty, "", "", ""];
+
+      // True at a day/venue boundary — used to insert a blank separator row.
+      const isBoundary = (r, prev) => prev && (r.dateISO !== prev.dateISO || r.venue !== prev.venue);
+
+      // Filename stem reflecting the current team filter.
+      const filterSlug = () =>
+        (selectedTeams.size === 0
+          ? "all-reds"
+          : selectedTeams.size === 1
+          ? [...selectedTeams][0]
+          : selectedTeams.size + "-teams"
+        )
+          .replace(/\s+/g, "-")
+          .toLowerCase();
+
+      function download(blob, filename) {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+
       function exportCSV() {
         if (!exportRows.length) return;
-        const cols = ["Date", "Team", "Coach", "Venue", "Opponent", "Time", "Court", "Duty", "Bag Collection", "Bag Return"];
         const csvCell = (v) => {
           const s = String(v == null ? "" : v);
           return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
         };
         const row = (vals) => vals.map(csvCell).join(",");
-        const lines = [row(cols)];
+        const lines = [row(EXPORT_COLS)];
         // Blank separator row between each day, and between each venue within a day.
-        let prevDate = null;
-        let prevVenue = null;
+        let prev = null;
         for (const r of exportRows) {
-          if (prevDate !== null && (r.dateISO !== prevDate || r.venue !== prevVenue)) lines.push("");
-          prevDate = r.dateISO;
-          prevVenue = r.venue;
-          lines.push(row([r.date, formatTeam(r.team), coachFor(r.team), r.venue, stripDivision(r.opponent), r.time, r.court, r.duty, "", ""]));
+          if (isBoundary(r, prev)) lines.push("");
+          prev = r;
+          lines.push(row(exportCells(r)));
         }
         const csv = "﻿" + lines.join("\r\n");
+        download(new Blob([csv], { type: "text/csv;charset=utf-8;" }), `wavl-roster-${filterSlug()}.csv`);
+      }
 
-        const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        const slug = (
-          selectedTeams.size === 0
-            ? "all-reds"
-            : selectedTeams.size === 1
-            ? [...selectedTeams][0]
-            : selectedTeams.size + "-teams"
-        )
-          .replace(/\s+/g, "-")
-          .toLowerCase();
-        a.href = url;
-        a.download = `wavl-roster-${slug}.csv`;
-        a.click();
-        URL.revokeObjectURL(url);
+      // Styled Excel export: Team cell filled red for "RVC" (senior) teams and
+      // black for "RJVC" (junior) teams, white bold text on both.
+      async function exportXLSX() {
+        if (!exportRows.length) return;
+        const wb = new ExcelJS.Workbook();
+        const ws = wb.addWorksheet("Roster");
+        // Drop the "Date" column — dates live in the per-day header rows instead.
+        const cols = EXPORT_COLS.slice(1);
+        const dataCells = exportRows.map((r) => exportCells(r).slice(1));
+        // Size each column to its widest value so all text is visible.
+        ws.columns = cols.map((c, i) => ({
+          width: Math.max(c.length, ...dataCells.map((row) => String(row[i] ?? "").length)) + 2,
+        }));
+        const centre = { horizontal: "center", vertical: "middle" };
+        const thin = { style: "thin" };
+        const teamIdx = cols.indexOf("Team") + 1;
+
+        // Full grid border for a content row (day title, column headers, data).
+        const gridRow = (row) => {
+          for (let c = 1; c <= cols.length; c++)
+            row.getCell(c).border = { top: thin, bottom: thin, left: thin, right: thin };
+        };
+        // Spacer row within a block: only the block's left/right outer edges,
+        // no internal (column) borders.
+        const sidesRow = (row) => {
+          row.getCell(1).border = { left: thin };
+          row.getCell(cols.length).border = { right: thin };
+        };
+        // Fill only the used cells (1..last) so the colour doesn't run past the
+        // last column the way a row-level fill would.
+        const fillRow = (row, argb) => {
+          for (let c = 1; c <= cols.length; c++)
+            row.getCell(c).fill = { type: "pattern", pattern: "solid", fgColor: { argb } };
+        };
+
+        let prev = null;
+        for (const [i, r] of exportRows.entries()) {
+          const newDay = !prev || r.dateISO !== prev.dateISO;
+          if (newDay) {
+            // Gap row between day blocks (no borders), then a new block: big
+            // bold centred all-caps day title spanning all columns, then headers.
+            if (prev) ws.addRow([]);
+            const hdr = ws.addRow([r.date.toUpperCase()]);
+            ws.mergeCells(hdr.number, 1, hdr.number, cols.length);
+            hdr.getCell(1).font = { bold: true, size: 14, color: { argb: "FFFFFFFF" } };
+            hdr.getCell(1).alignment = centre;
+            hdr.height = 20;
+            gridRow(hdr);
+            fillRow(hdr, "FF3C4043");
+            const colHdr = ws.addRow(cols);
+            colHdr.font = { bold: true, color: { argb: "FF202124" } };
+            colHdr.alignment = centre;
+            gridRow(colHdr);
+            fillRow(colHdr, "FFE8EAED");
+          } else if (r.venue !== prev.venue) {
+            sidesRow(ws.addRow([]));
+          }
+          prev = r;
+          const team = formatTeam(r.team);
+          const row = ws.addRow(dataCells[i]);
+          row.alignment = centre;
+          gridRow(row);
+          const teamCell = row.getCell(teamIdx);
+          teamCell.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: team.startsWith("RJVC") ? "FF000000" : "FFC8102E" },
+          };
+          teamCell.font = { color: { argb: "FFFFFFFF" }, bold: true };
+        }
+
+        const buf = await wb.xlsx.writeBuffer();
+        const blob = new Blob([buf], {
+          type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        });
+        download(blob, `wavl-roster-${filterSlug()}.xlsx`);
       }
 
       document.getElementById("export").addEventListener("click", exportCSV);
+      document.getElementById("exportxlsx").addEventListener("click", exportXLSX);
       document.getElementById("nextweek").classList.toggle("active", nextWeekOnly);
       document.getElementById("nextweek").addEventListener("click", (e) => {
         nextWeekOnly = !nextWeekOnly;
