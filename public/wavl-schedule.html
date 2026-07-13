@@ -360,8 +360,39 @@
         download(new Blob([csv], { type: "text/csv;charset=utf-8;" }), `wavl-roster-${filterSlug()}.csv`);
       }
 
+      // Fill colour (RGB hex) per venue for the Excel export; Aquinas is the
+      // brand red. Venue names match the full names in the schedule data.
+      const VENUE_COLOURS = {
+        "Aquinas College": "C8102E",
+        "Kingsway Stadium": "1565C0",
+        "Warwick": "455A64",
+        "Cockburn ARC": "00897B",
+        "Cyril Jackson Recreation Centre": "2E7D32",
+        "ECU Mount Lawley": "6A1B9A",
+        "Balcatta SHS": "E8710A",
+        "Mandurah ARC": "B8860B",
+        "Loftus Recreation Centre": "3949AB",
+        "Rossmoyne SHS": "546E7A",
+        "Swan Active Midland": "0288D1",
+        "Trinity College": "8E24AA",
+        "Guildford Grammar School": "6D4C41",
+        "Leschenault Leisure Centre": "0097A7",
+        "Southern River College": "4527A0",
+        "Methodist Ladies College": "8D6E63",
+        "Baldivis Indoor Sports Complex": "F9A825",
+        "Mandurah Baptist College": "7CB342",
+        "Penrhos College": "9E9D24",
+      };
+      // Pick black or white text for legibility on a given fill colour.
+      const textOn = (hex) => {
+        const n = parseInt(hex, 16);
+        const L = 0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
+        return L > 150 ? "FF202124" : "FFFFFFFF";
+      };
+
       // Styled Excel export: Team cell filled red for "RVC" (senior) teams and
-      // black for "RJVC" (junior) teams, white bold text on both.
+      // black for "RJVC" (junior) teams, white bold text on both. Venue cells
+      // are shaded per VENUE_COLOURS.
       async function exportXLSX() {
         if (!exportRows.length) return;
         const wb = new ExcelJS.Workbook();
@@ -376,6 +407,7 @@
         const centre = { horizontal: "center", vertical: "middle" };
         const thin = { style: "thin" };
         const teamIdx = cols.indexOf("Team") + 1;
+        const venueIdx = cols.indexOf("Venue") + 1;
 
         // Full grid border for a content row (day title, column headers, data).
         const gridRow = (row) => {
@@ -429,6 +461,12 @@
             fgColor: { argb: team.startsWith("RJVC") ? "FF000000" : "FFC8102E" },
           };
           teamCell.font = { color: { argb: "FFFFFFFF" }, bold: true };
+          const vhex = VENUE_COLOURS[r.venue];
+          if (vhex) {
+            const venueCell = row.getCell(venueIdx);
+            venueCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF" + vhex } };
+            venueCell.font = { color: { argb: textOn(vhex) } };
+          }
         }
 
         const buf = await wb.xlsx.writeBuffer();
