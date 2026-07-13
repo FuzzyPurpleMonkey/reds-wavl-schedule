@@ -115,6 +115,10 @@
       };
       const coachFor = (team) => COACHES[team] || "";
 
+      // Drop the leading division/grade code from a team name, e.g.
+      // "SLRM Fremantle" -> "Fremantle", "D1W Marist" -> "Marist".
+      const stripDivision = (name) => (name || "").replace(/^(SL|D\d+)R?[MW]\s+/i, "");
+
       let all = [];
       let teams = [];
       let selectedTeams = new Set();
@@ -255,7 +259,7 @@
                 <td class="team">${esc(r.team)}</td>
                 <td>${esc(coachFor(r.team))}</td>
                 <td>${venueHtml}</td>
-                <td>${esc(r.opponent)}</td>
+                <td>${esc(stripDivision(r.opponent))}</td>
                 <td class="time">${esc(r.time)}</td>
                 <td class="court">${esc(r.court)}</td>
                 <td class="duty">${esc(r.duty)}</td>
@@ -295,7 +299,7 @@
         const row = (vals) => vals.map(csvCell).join(",");
         const lines = [row(cols)];
         for (const r of exportRows) {
-          lines.push(row([r.date, r.team, coachFor(r.team), r.venue, r.opponent, r.time, r.court, r.duty, "", ""]));
+          lines.push(row([r.date, r.team, coachFor(r.team), r.venue, stripDivision(r.opponent), r.time, r.court, r.duty, "", ""]));
         }
         const csv = "﻿" + lines.join("\r\n");
 
