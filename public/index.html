@@ -134,6 +134,8 @@
       .result.loss { background: #fde6e6; color: #b3261e; }
       .result.na { background: #eef0f2; color: var(--muted); }
       .score .sets { font-weight: 700; margin-right: 6px; }
+      .calbtn { border: none; background: none; cursor: pointer; padding: 0 0 0 6px; font-size: 0.95rem; line-height: 1; opacity: 0.5; float: right; }
+      .calbtn:hover { opacity: 1; }
       .when { white-space: nowrap; }
       .when .time { color: var(--muted); font-size: 0.82rem; }
       .div { color: var(--muted); font-size: 0.8rem; }
@@ -172,8 +174,8 @@
         <button class="btn" id="unplayed">Unplayed only</button>
         <button class="btn" id="hidework">Hide work</button>
         <button class="btn" id="export">⬇ Export to CSV</button>
-        <button class="btn" id="addcal">📅 Add to calendar</button>
-        <button class="btn" id="refresh">Refresh</button>
+        <button class="btn" id="addcal">📅 Add all to calendar</button>
+        <button class="btn" id="refresh">🔄 Refresh</button>
       </div>
       <div class="filters" id="filters"></div>
       <div id="content"><div class="state"><img src="perth_reds_bounce.gif" alt="Loading" />Loading matches…</div></div>
@@ -184,6 +186,7 @@
       let teams = [];
       let teamGroups = []; // [{ league: "WAVL", teams: [...] }, ...]
       let currentRows = []; // rows currently shown (after team + search filters)
+      let calRows = []; // matches indexed by the per-row calendar icons (rebuilt each render)
       let selectedTeams = new Set(); // empty = all Reds teams
       let unplayedOnly = true; // show only games not yet played (default on)
       let nextWeekOnly = false; // show only games in the next 7 days
@@ -310,6 +313,7 @@
           return;
         }
         // Group into one table per date (rows arrive already sorted by date then time).
+        calRows = []; // rebuilt so the per-row calendar icons index the shown matches
         const groups = [];
         let cur = null;
         for (const m of rows) {
@@ -346,6 +350,8 @@
                 const venueHtml = m.venueAddress
                   ? `<a class="venue-link" href="${esc(mapsUrl(m))}" target="_blank" rel="noopener">${esc(m.venue)}</a>`
                   : esc(m.venue);
+                const calIdx = calRows.push(m) - 1;
+                const calBtn = `<button class="calbtn" data-cal="${calIdx}" title="Add this game to calendar" aria-label="Add this game to calendar">📅</button>`;
                 return (
                   sep +
                   `
@@ -355,7 +361,7 @@
               <td data-label="Home">${cell(m.home)}</td>
               <td data-label="Away">${cell(m.away)}</td>
               ${hideWork ? "" : `<td data-label="Work" class="work">${cell(m.work)}</td>`}
-              <td data-label="Score" class="score">${renderScoreCell(m)}</td>
+              <td data-label="Score" class="score">${calBtn}${renderScoreCell(m)}</td>
             </tr>`
                 );
               })
@@ -489,74 +495,92 @@
       const CAL_DURATION_MIN = 90; // no end time in the source; assume 90-minute matches
       const PERTH_OFFSET_H = 8; // Australia/Perth is UTC+8 year-round (no DST)
 
-      // Build a downloadable .ics file from the currently shown rows.
-      function exportICS() {
-        if (!currentRows.length) return;
+      const slugPart = (s) => (s || "").replace(/[^a-z0-9]+/gi, "-").toLowerCase();
 
-        const slugPart = (s) => (s || "").replace(/[^a-z0-9]+/gi, "-").toLowerCase();
-        const dtstamp = icsStamp(new Date());
+      // Build the VEVENT lines for one match, or null if it can't be placed on a
+      // timeline (missing date or unparseable time).
+      function matchToVevent(m, dtstamp) {
+        const dm = (m.dateISO || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        const tm = (m.time || "").match(/(\d+):(\d+)\s*(AM|PM)/i);
+        if (!dm || !tm) return null;
 
+        let hh = +tm[1] % 12;
+        if (/pm/i.test(tm[3])) hh += 12;
+        // Perth wall-clock -> UTC; Date.UTC handles the hour-underflow date rollover.
+        const start = new Date(Date.UTC(+dm[1], +dm[2] - 1, +dm[3], hh - PERTH_OFFSET_H, +tm[2]));
+        const end = new Date(start.getTime() + CAL_DURATION_MIN * 60000);
+
+        const redsMatch = REDS.test(m.home) || REDS.test(m.away);
+        let summary = `${m.home} v ${m.away}`;
+        if (!redsMatch) summary = "Duty — " + summary;
+        if (m.division) summary += ` (${m.division})`;
+
+        const location = m.venue + (m.venueAddress ? ", " + m.venueAddress : "");
+
+        const descParts = [];
+        if (m.division) descParts.push(m.division);
+        if (m.court) descParts.push("Court " + m.court);
+        if (m.work) descParts.push("Work: " + m.work);
+        if (m.played) {
+          const res = m.result && m.result !== "N/A" ? m.result : "";
+          const score = [m.setScore, m.score].filter(Boolean).join(" ");
+          const line = [res, score].filter(Boolean).join(" ");
+          if (line) descParts.push("Result: " + line);
+        }
+
+        const uid =
+          `${m.dateISO}-${tm[1]}${tm[2]}${tm[3]}-${slugPart(m.home)}-${slugPart(m.away)}@reds-wavl`;
+
+        return [
+          "BEGIN:VEVENT",
+          "UID:" + uid,
+          "DTSTAMP:" + dtstamp,
+          "DTSTART:" + icsStamp(start),
+          "DTEND:" + icsStamp(end),
+          "SUMMARY:" + icsText(summary),
+          "LOCATION:" + icsText(location),
+          "DESCRIPTION:" + icsText(descParts.join("\n")),
+          "END:VEVENT",
+        ];
+      }
+
+      // Wrap VEVENT lines in a VCALENDAR and trigger a download.
+      function downloadICS(eventLines, filename) {
         const lines = [
           "BEGIN:VCALENDAR",
           "VERSION:2.0",
           "PRODID:-//Perth Reds//Schedule//EN",
           "CALSCALE:GREGORIAN",
+          ...eventLines,
+          "END:VCALENDAR",
         ];
-
-        for (const m of currentRows) {
-          const dm = (m.dateISO || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
-          const tm = (m.time || "").match(/(\d+):(\d+)\s*(AM|PM)/i);
-          if (!dm || !tm) continue; // skip rows we can't place on a timeline
-
-          let hh = +tm[1] % 12;
-          if (/pm/i.test(tm[3])) hh += 12;
-          // Perth wall-clock -> UTC; Date.UTC handles the hour-underflow date rollover.
-          const start = new Date(Date.UTC(+dm[1], +dm[2] - 1, +dm[3], hh - PERTH_OFFSET_H, +tm[2]));
-          const end = new Date(start.getTime() + CAL_DURATION_MIN * 60000);
-
-          const redsMatch = REDS.test(m.home) || REDS.test(m.away);
-          let summary = `${m.home} v ${m.away}`;
-          if (!redsMatch) summary = "Duty — " + summary;
-          if (m.division) summary += ` (${m.division})`;
-
-          const location = m.venue + (m.venueAddress ? ", " + m.venueAddress : "");
-
-          const descParts = [];
-          if (m.division) descParts.push(m.division);
-          if (m.court) descParts.push("Court " + m.court);
-          if (m.work) descParts.push("Work: " + m.work);
-          if (m.played) {
-            const res = m.result && m.result !== "N/A" ? m.result : "";
-            const score = [m.setScore, m.score].filter(Boolean).join(" ");
-            const line = [res, score].filter(Boolean).join(" ");
-            if (line) descParts.push("Result: " + line);
-          }
-
-          const uid =
-            `${m.dateISO}-${tm[1]}${tm[2]}${tm[3]}-${slugPart(m.home)}-${slugPart(m.away)}@reds-wavl`;
-
-          lines.push(
-            "BEGIN:VEVENT",
-            "UID:" + uid,
-            "DTSTAMP:" + dtstamp,
-            "DTSTART:" + icsStamp(start),
-            "DTEND:" + icsStamp(end),
-            "SUMMARY:" + icsText(summary),
-            "LOCATION:" + icsText(location),
-            "DESCRIPTION:" + icsText(descParts.join("\n")),
-            "END:VEVENT"
-          );
-        }
-
-        lines.push("END:VCALENDAR");
-
         const blob = new Blob([lines.join("\r\n")], { type: "text/calendar;charset=utf-8" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = `reds-schedule-${selectionSlug()}.ics`;
+        a.download = filename;
         a.click();
         URL.revokeObjectURL(url);
+      }
+
+      // Build a downloadable .ics file from the currently shown rows.
+      function exportICS() {
+        if (!currentRows.length) return;
+        const dtstamp = icsStamp(new Date());
+        const events = [];
+        for (const m of currentRows) {
+          const ev = matchToVevent(m, dtstamp);
+          if (ev) events.push(...ev);
+        }
+        if (!events.length) return;
+        downloadICS(events, `reds-schedule-${selectionSlug()}.ics`);
+      }
+
+      // Download a single game's .ics file (per-row calendar icon).
+      function exportMatchICS(m) {
+        const ev = matchToVevent(m, icsStamp(new Date()));
+        if (!ev) return;
+        downloadICS(ev, `reds-${slugPart(m.home)}-v-${slugPart(m.away)}-${m.dateISO}.ics`);
       }
 
       async function load() {
@@ -610,6 +634,13 @@
       });
       document.getElementById("export").addEventListener("click", exportCSV);
       document.getElementById("addcal").addEventListener("click", exportICS);
+      // Per-row calendar icons (delegated, since the table is re-rendered on every filter).
+      document.getElementById("content").addEventListener("click", (e) => {
+        const btn = e.target.closest(".calbtn");
+        if (!btn) return;
+        const m = calRows[+btn.dataset.cal];
+        if (m) exportMatchICS(m);
+      });
       document.getElementById("refresh").addEventListener("click", load);
       load();
     </script>
