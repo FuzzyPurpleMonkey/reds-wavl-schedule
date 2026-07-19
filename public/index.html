@@ -172,6 +172,7 @@
         <button class="btn" id="unplayed">Unplayed only</button>
         <button class="btn" id="hidework">Hide work</button>
         <button class="btn" id="export">⬇ Export to CSV</button>
+        <button class="btn" id="addcal">📅 Add to calendar</button>
         <button class="btn" id="refresh">Refresh</button>
       </div>
       <div class="filters" id="filters"></div>
@@ -453,7 +454,15 @@
         const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
-        const slug = (
+        a.href = url;
+        a.download = `reds-schedule-${selectionSlug()}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+
+      // Shared filename slug for the current selection, e.g. "all-reds", "d1m-black".
+      function selectionSlug() {
+        return (
           selectedTeams.size === 0
             ? "all-reds"
             : selectedTeams.size === 1
@@ -462,8 +471,90 @@
         )
           .replace(/\s+/g, "-")
           .toLowerCase();
+      }
+
+      // Escape a text value for an iCalendar property (RFC 5545).
+      const icsText = (v) =>
+        String(v == null ? "" : v).replace(/[\\;,]/g, "\\$&").replace(/\r?\n/g, "\\n");
+
+      // Format a Date as an iCalendar UTC timestamp, e.g. "20260411T013000Z".
+      function icsStamp(d) {
+        const p = (n) => String(n).padStart(2, "0");
+        return (
+          `${d.getUTCFullYear()}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}` +
+          `T${p(d.getUTCHours())}${p(d.getUTCMinutes())}${p(d.getUTCSeconds())}Z`
+        );
+      }
+
+      const CAL_DURATION_MIN = 90; // no end time in the source; assume 90-minute matches
+      const PERTH_OFFSET_H = 8; // Australia/Perth is UTC+8 year-round (no DST)
+
+      // Build a downloadable .ics file from the currently shown rows.
+      function exportICS() {
+        if (!currentRows.length) return;
+
+        const slugPart = (s) => (s || "").replace(/[^a-z0-9]+/gi, "-").toLowerCase();
+        const dtstamp = icsStamp(new Date());
+
+        const lines = [
+          "BEGIN:VCALENDAR",
+          "VERSION:2.0",
+          "PRODID:-//Perth Reds//Schedule//EN",
+          "CALSCALE:GREGORIAN",
+        ];
+
+        for (const m of currentRows) {
+          const dm = (m.dateISO || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+          const tm = (m.time || "").match(/(\d+):(\d+)\s*(AM|PM)/i);
+          if (!dm || !tm) continue; // skip rows we can't place on a timeline
+
+          let hh = +tm[1] % 12;
+          if (/pm/i.test(tm[3])) hh += 12;
+          // Perth wall-clock -> UTC; Date.UTC handles the hour-underflow date rollover.
+          const start = new Date(Date.UTC(+dm[1], +dm[2] - 1, +dm[3], hh - PERTH_OFFSET_H, +tm[2]));
+          const end = new Date(start.getTime() + CAL_DURATION_MIN * 60000);
+
+          const redsMatch = REDS.test(m.home) || REDS.test(m.away);
+          let summary = `${m.home} v ${m.away}`;
+          if (!redsMatch) summary = "Duty — " + summary;
+          if (m.division) summary += ` (${m.division})`;
+
+          const location = m.venue + (m.venueAddress ? ", " + m.venueAddress : "");
+
+          const descParts = [];
+          if (m.division) descParts.push(m.division);
+          if (m.court) descParts.push("Court " + m.court);
+          if (m.work) descParts.push("Work: " + m.work);
+          if (m.played) {
+            const res = m.result && m.result !== "N/A" ? m.result : "";
+            const score = [m.setScore, m.score].filter(Boolean).join(" ");
+            const line = [res, score].filter(Boolean).join(" ");
+            if (line) descParts.push("Result: " + line);
+          }
+
+          const uid =
+            `${m.dateISO}-${tm[1]}${tm[2]}${tm[3]}-${slugPart(m.home)}-${slugPart(m.away)}@reds-wavl`;
+
+          lines.push(
+            "BEGIN:VEVENT",
+            "UID:" + uid,
+            "DTSTAMP:" + dtstamp,
+            "DTSTART:" + icsStamp(start),
+            "DTEND:" + icsStamp(end),
+            "SUMMARY:" + icsText(summary),
+            "LOCATION:" + icsText(location),
+            "DESCRIPTION:" + icsText(descParts.join("\n")),
+            "END:VEVENT"
+          );
+        }
+
+        lines.push("END:VCALENDAR");
+
+        const blob = new Blob([lines.join("\r\n")], { type: "text/calendar;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
         a.href = url;
-        a.download = `reds-schedule-${slug}.csv`;
+        a.download = `reds-schedule-${selectionSlug()}.ics`;
         a.click();
         URL.revokeObjectURL(url);
       }
@@ -518,6 +609,7 @@
         applyFilter();
       });
       document.getElementById("export").addEventListener("click", exportCSV);
+      document.getElementById("addcal").addEventListener("click", exportICS);
       document.getElementById("refresh").addEventListener("click", load);
       load();
     </script>
